@@ -18,7 +18,7 @@ function int(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export type LlmProvider = "anthropic" | "openai";
+export type LlmProvider = "orthogonal" | "anthropic" | "openai";
 
 /**
  * Read lazily (getters) rather than snapshotting process.env at import time:
@@ -36,7 +36,7 @@ export const env = {
   },
   llm: {
     get provider() {
-      return (optional("LLM_PROVIDER") ?? "anthropic") as LlmProvider;
+      return (optional("LLM_PROVIDER") ?? "orthogonal") as LlmProvider;
     },
     get model() {
       return optional("LLM_MODEL");

@@ -36,7 +36,7 @@ Assumptions I made:
 - **Cost safety.** A single chat turn cannot spend more than a configured cap (default 50¢), no matter what the model decides to do. Identical paid calls within a 10-minute window are served from cache instead of re-charged.
 - **Latency.** First token should stream within a few seconds. Catalog metadata lookups (search, details) are cached in memory so repeat questions skip the round trips.
 - **Resilience.** Orthogonal errors are classified and normalized; a tool failure never kills the stream. Persistence failures never block a response.
-- **Portability.** The LLM provider is a config value (`LLM_PROVIDER=anthropic|openai`), not an import.
+- **Portability.** The LLM provider is a config value (`LLM_PROVIDER=orthogonal|anthropic|openai`), not an import. The default needs no additional key: inference runs through Orthogonal's own catalog.
 - **Type safety end to end.** TypeScript strict mode; the Orthogonal client types were validated against live responses, not the docs.
 
 ### System diagram
@@ -59,9 +59,11 @@ Assumptions I made:
 │                   │                                                         │
 │                   │ tool calls                    ┌──────────────────────┐  │
 │                   ▼                               │  LLM provider        │  │
-│  ┌─────────────────────────────────┐  prompts +   │  (Anthropic or       │  │
-│  │ Tool layer                      │  tool defs   │  OpenAI, via env)    │  │
-│  │                                 │◄────────────►└──────────────────────┘  │
+│  ┌─────────────────────────────────┐  prompts +   │  default: GLM-5.2    │  │
+│  │ Tool layer                      │  tool defs   │  via Orthogonal /run │  │
+│  │                                 │◄────────────►│  (or Anthropic/      │  │
+│  │                                 │              │  OpenAI via env)     │  │
+│  │                                 │              └──────────────────────┘  │
 │  │ curated:                        │                                        │
 │  │  · enrich_company               │              ┌──────────────────────┐  │
 │  │  · find_contact_by_linkedin    ─┼──────────────►  SpendTracker        │  │
@@ -178,6 +180,8 @@ The app also runs with no database at all. Every store function no-ops when `DAT
 
 **Tool errors are data, not exceptions.** Tools never throw. Every failure returns `{ ok: false, error: "..." }` with a normalized code and a retryability hint. A thrown error inside a tool would abort the whole stream and the user would get a broken turn; a structured error gives the model one more step to try an alternative endpoint or explain the failure. The error taxonomy (AUTH, RATE_LIMITED, INSUFFICIENT_CREDITS, UPSTREAM, TIMEOUT, BUDGET_EXCEEDED, …) is shared between the client and the tools.
 
+**One key end to end: the LLM itself runs through Orthogonal.** While probing the catalog I noticed it contains OpenAI-compatible chat-completion endpoints (Baseten, Z.ai, Perplexity). I verified that Baseten's `/v1/chat/completions` via `/v1/run` supports the `tools` array and that `zai-org/GLM-5.2` emits well-formed `tool_calls`, at roughly 0.1¢ per call. So the default deployment needs exactly one secret: the Orthogonal key pays for both the reasoning and the data. Implementation: the AI SDK's OpenAI provider with a custom `fetch` that rewraps each request into the `/v1/run` envelope and unwraps the response, composed with `simulateStreamingMiddleware` because `/v1/run` returns a single JSON body. The tradeoff is real: no true token-by-token streaming on this provider; text arrives per agent step. Direct Anthropic or OpenAI keys restore token streaming with one env change, and I kept those paths tested and first-class. I chose the single-key default anyway because it demonstrates the deepest possible use of the platform being evaluated, and it removes a signup barrier for anyone running the repo.
+
 **Vercel AI SDK over a hand-rolled agent loop.** I considered writing the tool-calling loop directly against the Anthropic API. The AI SDK won on three counts: the multi-step loop with `stopWhen` is exactly the agent shape I needed, the UIMessage stream protocol carries tool inputs/outputs to the client incrementally (which is what makes the live tool trace possible without inventing a wire format), and provider abstraction came free, which the "provider-agnostic" requirement made non-optional. The cost is a framework dependency whose part-type unions occasionally fight you in TypeScript.
 
 **Budget enforcement lives server-side, per turn.** The cap is not in the prompt (models don't reliably obey numeric constraints) and not in the client (trivially bypassed). It's a counter in the request handler that every paid tool consults. Prompt guidance exists too, but as an optimization (the model economizes voluntarily), not as the safety mechanism.
@@ -191,6 +195,7 @@ The app also runs with no database at all. Every store function no-ops when `DAT
 - **Last-2-messages persistence per turn.** The chat route persists the user message and assistant response after each turn rather than diffing the full history. Simple and correct for the append-only flow the UI generates; it would miss edits or regenerations of older messages if those features were added.
 - **Trimmed tool outputs.** Upstream responses get truncated at 12 kB before reaching the model. Saves tokens and keeps latency down, at the cost of occasionally cutting off a long result. The full response is still visible in the UI trace (up to its own display cap).
 - **No streaming of intermediate model "thinking".** Reasoning parts are dropped in the UI. Cleaner for end users, less transparency for the curious.
+- **Simulated streaming on the default provider.** Orthogonal's `/v1/run` cannot stream, so with `LLM_PROVIDER=orthogonal` each agent step's text arrives as a block rather than token by token. Tool trace events still appear live between steps, which preserves most of the perceived responsiveness. Direct Anthropic/OpenAI keys restore true streaming.
 - **Two tables, no users table.** The data model matches what the app does today rather than speculating about multi-tenancy. Adding `user_id` to conversations is a one-line migration when auth arrives.
 
 ## Limitations
@@ -230,6 +235,6 @@ cp .env.example .env.local   # fill in ORTHOGONAL_API_KEY and one LLM key
 npm run dev
 ```
 
-Minimum viable env: `ORTHOGONAL_API_KEY` plus either `ANTHROPIC_API_KEY` (default) or `LLM_PROVIDER=openai` with `OPENAI_API_KEY`. Without `DATABASE_URL` the app runs in ephemeral mode; with it, run `npx drizzle-kit push` once to create the two tables.
+Minimum viable env: `ORTHOGONAL_API_KEY`. That single key covers both the LLM (GLM-5.2 through Orthogonal's Baseten endpoint) and the data tools. Optionally set `LLM_PROVIDER=anthropic` or `openai` with the matching key for true token streaming. Without `DATABASE_URL` the app runs in ephemeral mode; with it, run `npx drizzle-kit push` once to create the two tables.
 
 `npx tsx scripts/smoke.ts` sanity-checks your Orthogonal key against the live catalog without spending anything.

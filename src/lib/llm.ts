@@ -1,25 +1,97 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
-import { env } from "@/lib/env";
+import { simulateStreamingMiddleware, wrapLanguageModel, type LanguageModel } from "ai";
+import { env, requireOrthogonalKey } from "@/lib/env";
 
 /**
  * Provider-agnostic model resolution. The rest of the app only sees the AI
- * SDK's `LanguageModel` interface; swapping providers is an env-var change
- * (LLM_PROVIDER + key), no code changes.
+ * SDK's `LanguageModel` interface; swapping providers is an env-var change.
+ *
+ * Three providers:
+ *  - "orthogonal" (default): LLM inference through Orthogonal's own catalog
+ *    (Baseten's OpenAI-compatible /v1/chat/completions, executed via /v1/run).
+ *    One key powers the whole app; ~0.1¢ per call. /v1/run cannot stream, so
+ *    the model is wrapped in simulateStreamingMiddleware: tokens arrive per
+ *    agent step rather than one by one, but the UI stream protocol still works.
+ *  - "anthropic" / "openai": direct keys, with true token streaming.
  */
 
-// Overridable via LLM_MODEL; these are safe, tool-calling-capable defaults.
 const DEFAULT_MODEL: Record<string, string> = {
+  // Verified to emit OpenAI-style tool_calls through Orthogonal (2026-07).
+  orthogonal: "zai-org/GLM-5.2",
   anthropic: "claude-sonnet-5",
   openai: "gpt-4o",
 };
+
+const ORTHOGONAL_LLM_API = "baseten";
+const ORTHOGONAL_LLM_PATH = "/v1/chat/completions";
+
+/**
+ * A fetch that rewraps OpenAI-shaped requests into Orthogonal's /v1/run
+ * envelope and unwraps the response. Streaming is stripped: /v1/run returns
+ * a single JSON body.
+ */
+function orthogonalFetch(): typeof fetch {
+  return async (input, init) => {
+    const apiKey = requireOrthogonalKey();
+    const original = init?.body ? JSON.parse(init.body as string) : {};
+    // /v1/run cannot stream; force a plain completion.
+    delete original.stream;
+    delete original.stream_options;
+
+    const res = await fetch(new URL("/v1/run", env.orthogonal.baseUrl), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        api: ORTHOGONAL_LLM_API,
+        path: ORTHOGONAL_LLM_PATH,
+        body: original,
+      }),
+      signal: init?.signal ?? null,
+    });
+
+    const wrapper = (await res.json()) as {
+      success?: boolean;
+      data?: unknown;
+      error?: string;
+      priceCents?: number;
+    };
+
+    if (!res.ok || wrapper.success === false) {
+      // Surface an OpenAI-shaped error so the provider reports it cleanly.
+      return new Response(
+        JSON.stringify({ error: { message: wrapper.error ?? `Orthogonal run failed (${res.status})` } }),
+        { status: res.ok ? 502 : res.status, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response(JSON.stringify(wrapper.data), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+}
 
 export function getModel(): LanguageModel {
   const provider = env.llm.provider;
   const modelId = env.llm.model ?? DEFAULT_MODEL[provider];
 
   switch (provider) {
+    case "orthogonal": {
+      requireOrthogonalKey();
+      const openaiCompat = createOpenAI({
+        apiKey: "unused-routed-through-orthogonal",
+        baseURL: "https://orthogonal.llm.invalid/v1", // never hit; fetch rewraps
+        fetch: orthogonalFetch(),
+      });
+      return wrapLanguageModel({
+        model: openaiCompat.chat(modelId),
+        middleware: simulateStreamingMiddleware(),
+      });
+    }
     case "anthropic": {
       if (!env.llm.anthropicApiKey) {
         throw new Error("ANTHROPIC_API_KEY is not set (LLM_PROVIDER=anthropic).");
