@@ -4,9 +4,9 @@ import { useState } from "react";
 import type { ToolUIPart } from "ai";
 
 /**
- * One row in the "trace log" — a tool invocation with live status and cost.
- * This is the signature element of the UI: users literally watch the
- * assistant spend cents against Orthogonal's catalog.
+ * One row in the trace log: a tool invocation with live status and cost.
+ * Styled as a flat soft-paper row with a hairline border; the paid-call cost
+ * renders as a teal pill (teal is the system's single accent, fills only).
  */
 
 const TOOL_LABEL: Record<string, string> = {
@@ -57,55 +57,53 @@ export function ToolTrace({ part }: { part: ToolUIPart }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="group flex w-full items-center gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-left transition-colors hover:border-[var(--border-strong)]"
+        className="group flex w-full items-center gap-2.5 rounded-[12px] border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
       >
-        {/* status glyph */}
+        {/* status glyph — monochrome per the flat, single-accent rule */}
         <span className="flex h-4 w-4 shrink-0 items-center justify-center">
           {running ? (
-            <span className="h-2 w-2 animate-spin rounded-[2px] border border-[var(--accent)] border-t-transparent" />
+            <span className="h-2 w-2 animate-spin rounded-[2px] border border-[var(--ink-dim)] border-t-transparent" />
           ) : failed ? (
             <span className="text-[13px] leading-none text-[var(--err)]">✕</span>
           ) : (
-            <span className="text-[13px] leading-none text-[var(--ok)]">✓</span>
+            <span className="text-[13px] leading-none text-[var(--ink)]">✓</span>
           )}
         </span>
 
-        <span className="font-[family-name:var(--font-mono)] text-[12.5px] text-[var(--ink-dim)]">
+        <span className="shrink-0 text-[14px] font-medium leading-[1.43] text-[var(--ink)]">
           {label}
         </span>
 
-        <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-mono)] text-[12.5px] text-[var(--ink-faint)]">
+        <span className="min-w-0 flex-1 truncate text-[14px] leading-[1.43] text-[var(--ink-dim)]">
           {inputSummary(part.input)}
         </span>
 
         {cost && (
           <span
-            className={`shrink-0 rounded-full border px-2 py-px font-[family-name:var(--font-mono)] text-[11px] ${
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${
               cost === "free"
-                ? "border-[var(--border)] text-[var(--ink-faint)]"
-                : "border-[var(--accent-dim)] bg-[var(--accent-glow)] text-[var(--accent)]"
+                ? "border border-[var(--border)] text-[var(--ink-dim)]"
+                : "bg-[var(--accent)] text-white"
             }`}
           >
             {cost}
           </span>
         )}
 
-        <span className="shrink-0 text-[10px] text-[var(--ink-faint)] transition-transform group-hover:text-[var(--ink-dim)]">
-          {open ? "▲" : "▼"}
-        </span>
+        <span className="shrink-0 text-[10px] text-[var(--ink-faint)]">{open ? "▲" : "▼"}</span>
       </button>
 
       {open && (
-        <div className="mt-1 space-y-2 rounded-md border border-[var(--border)] bg-[#0e0c0b] p-3 font-[family-name:var(--font-mono)] text-[12px]">
+        <div className="mt-1 space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--bg-raised)] p-3 font-[family-name:var(--font-mono)] text-[12px] leading-[1.43]">
           <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">input</div>
+            <div className="mb-1 text-[11px] font-medium text-[var(--ink-faint)]">input</div>
             <pre className="overflow-x-auto whitespace-pre-wrap break-all text-[var(--ink-dim)]">
               {JSON.stringify(part.input, null, 2)}
             </pre>
           </div>
           {failed && (
             <div>
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-[var(--err)]">error</div>
+              <div className="mb-1 text-[11px] font-medium text-[var(--err)]">error</div>
               <pre className="whitespace-pre-wrap break-all text-[var(--err)]">
                 {part.state === "output-error" ? part.errorText : out?.error}
               </pre>
@@ -113,7 +111,7 @@ export function ToolTrace({ part }: { part: ToolUIPart }) {
           )}
           {out?.data && (
             <div>
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
+              <div className="mb-1 text-[11px] font-medium text-[var(--ink-faint)]">
                 result{out.truncated ? " (truncated)" : ""}
               </div>
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all text-[var(--ink-dim)]">

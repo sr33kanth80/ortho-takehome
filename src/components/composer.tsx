@@ -29,7 +29,9 @@ export function Composer({ disabled, streaming, onSend, onStop }: Props) {
   };
 
   return (
-    <div className="relative rounded-xl border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-[0_-12px_40px_rgba(0,0,0,0.4)] transition-colors focus-within:border-[var(--accent-dim)]">
+    <div
+      className="relative rounded-[12px] border border-[var(--border)] bg-[var(--bg)] transition-shadow focus-within:shadow-[0_0_0_3px_rgba(1,106,113,0.18)]"
+    >
       <textarea
         ref={ref}
         value={value}
@@ -42,7 +44,7 @@ export function Composer({ disabled, streaming, onSend, onStop }: Props) {
         }}
         rows={1}
         placeholder="Ask about a company, a person, or anything on the web…"
-        className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-[15px] leading-6 outline-none placeholder:text-[var(--ink-faint)]"
+        className="w-full resize-none bg-transparent px-4 py-4 pr-14 text-[16px] leading-[1.5] text-[var(--ink)] outline-none placeholder:text-[var(--ink-dim)]"
       />
       <div className="absolute bottom-2.5 right-2.5">
         {streaming ? (
@@ -50,7 +52,7 @@ export function Composer({ disabled, streaming, onSend, onStop }: Props) {
             type="button"
             onClick={onStop}
             title="Stop generating"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-strong)] bg-[var(--bg-hover)] text-[var(--ink-dim)] transition-colors hover:text-[var(--err)]"
+            className="flex h-8 w-8 items-center justify-center rounded-[6px] border border-[var(--border)] bg-transparent text-[var(--ink-dim)] transition-colors hover:text-[var(--ink)]"
           >
             <span className="block h-2.5 w-2.5 bg-current" />
           </button>
@@ -60,9 +62,9 @@ export function Composer({ disabled, streaming, onSend, onStop }: Props) {
             onClick={submit}
             disabled={!value.trim() || disabled}
             title="Send (Enter)"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-[#131110] transition-all hover:brightness-110 disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-[var(--ink)] text-[var(--color-parchment)] transition-opacity hover:opacity-90 disabled:opacity-30"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>

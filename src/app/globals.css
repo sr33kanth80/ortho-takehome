@@ -1,25 +1,66 @@
 @import "tailwindcss";
 
 :root {
-  /* ── palette: warm ink + amber signal ─────────────────────────────── */
-  --bg: #131110;
-  --bg-raised: #1a1715;
-  --bg-hover: #221e1b;
-  --border: #2c2723;
-  --border-strong: #3d3630;
-  --ink: #e9e2d8;
-  --ink-dim: #a89d8f;
-  --ink-faint: #6e645a;
-  --accent: #e8a33d;
-  --accent-dim: #8a6526;
-  --accent-glow: rgba(232, 163, 61, 0.12);
-  --ok: #7fb069;
-  --err: #d16a5a;
-  --user-bubble: #262019;
+  /* ── design tokens: "scholar's parchment behind clean glass" ─────────── */
+  --color-parchment: #faf8f5;
+  --color-soft-paper: #fdfbfa;
+  --color-warm-mist: #d1d1cd;
+  --color-ash: #92918b;
+  --color-graphite: #72706b;
+  --color-ink: #27251e;
+  --color-pure-black: #000000;
+  --color-deep-teal: #016a71;
 
-  --font-body: var(--font-plex-sans), ui-sans-serif, sans-serif;
-  --font-display: var(--font-instrument), ui-serif, serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  /* Typography — Scale */
+  --text-caption: 11px;
+  --leading-caption: 1.43;
+  --text-body-sm: 12px;
+  --leading-body-sm: 1.43;
+  --text-body: 14px;
+  --leading-body: 1.43;
+  --text-body-lg: 16px;
+  --leading-body-lg: 1.43;
+
+  /* Spacing */
+  --spacing-unit: 4px;
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-32: 32px;
+
+  /* Layout */
+  --page-max-width: 900px;
+  --section-gap: 32px;
+  --card-padding: 16px;
+  --element-gap: 8px;
+
+  /* Named Radii */
+  --radius-cards: 16px;
+  --radius-chips: 9999px;
+  --radius-inputs: 12px;
+  --radius-buttons: 6px;
+
+  /* Shadows — the single shadow in the system */
+  --shadow-subtle: rgba(0, 0, 0, 0.08) 0px 1px 2px 0px;
+
+  /* ── semantic mapping used by components ─────────────────────────────── */
+  --bg: var(--color-parchment);
+  --bg-raised: var(--color-soft-paper);
+  --bg-hover: #f2efe9; /* parchment nudged one step for hover feedback */
+  --bg-sidebar: #f5f2ed; /* slightly darker parchment tone per layout spec */
+  --border: var(--color-warm-mist);
+  --border-strong: #c2c0ba;
+  --ink: var(--color-ink);
+  --ink-dim: var(--color-graphite);
+  --ink-faint: var(--color-ash);
+  --accent: var(--color-deep-teal); /* fills + selected states ONLY, never text */
+  --accent-glow: rgba(1, 106, 113, 0.4); /* decorative glow around the input */
+  --err: #8c4a3f; /* functional error text; kept muted and warm */
+
+  --font-body: var(--font-pplxsans), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * {
@@ -35,48 +76,39 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: var(--text-body-lg);
+  line-height: 1.5;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
 }
 
-/* grain atmosphere */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
-}
-
 ::selection {
-  background: var(--accent-dim);
+  background: rgba(1, 106, 113, 0.16);
   color: var(--ink);
 }
 
 /* ── scrollbars ──────────────────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-color: var(--color-warm-mist) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
+  background: var(--color-warm-mist);
   border-radius: 4px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* ── reveal animations ───────────────────────────────────────────────── */
+/* ── reveal animations (kept quiet to match the flat language) ───────── */
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -95,7 +127,7 @@ body::before {
 @keyframes trace-in {
   from {
     opacity: 0;
-    transform: translateX(-4px);
+    transform: translateX(-3px);
   }
   to {
     opacity: 1;
@@ -104,10 +136,10 @@ body::before {
 }
 
 .msg-enter {
-  animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rise 0.3s ease-out both;
 }
 .trace-enter {
-  animation: trace-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: trace-in 0.25s ease-out both;
 }
 
 .thinking-dot {
@@ -122,7 +154,8 @@ body::before {
 
 /* ── markdown body ───────────────────────────────────────────────────── */
 .prose-chat {
-  font-size: 15px;
+  font-size: var(--text-body-lg);
+  line-height: 1.5;
 }
 .prose-chat > * + * {
   margin-top: 0.7em;
@@ -130,42 +163,41 @@ body::before {
 .prose-chat h1,
 .prose-chat h2,
 .prose-chat h3 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: 0.01em;
+  font-weight: 500; /* the system caps at 500 — no bold display weights */
   color: var(--ink);
   margin-top: 1.1em;
 }
 .prose-chat h1 {
-  font-size: 1.45em;
+  font-size: 1.3em;
 }
 .prose-chat h2 {
-  font-size: 1.28em;
+  font-size: 1.18em;
 }
 .prose-chat h3 {
-  font-size: 1.12em;
+  font-size: 1.05em;
 }
 .prose-chat a {
-  color: var(--accent);
+  /* teal is reserved for fills/selected states; links stay ink */
+  color: var(--ink);
   text-decoration: underline;
-  text-decoration-color: var(--accent-dim);
+  text-decoration-color: var(--color-warm-mist);
   text-underline-offset: 3px;
 }
 .prose-chat a:hover {
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--color-graphite);
 }
 .prose-chat code {
   font-family: var(--font-mono);
-  font-size: 0.86em;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  font-size: 0.85em;
+  background: var(--color-soft-paper);
+  border: 1px solid var(--color-warm-mist);
+  border-radius: var(--radius-buttons);
   padding: 0.1em 0.35em;
 }
 .prose-chat pre {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--color-soft-paper);
+  border: 1px solid var(--color-warm-mist);
+  border-radius: var(--radius-inputs);
   padding: 12px 14px;
   overflow-x: auto;
 }
@@ -188,37 +220,35 @@ body::before {
   margin-top: 0.25em;
 }
 .prose-chat blockquote {
-  border-left: 2px solid var(--accent-dim);
+  border-left: 2px solid var(--color-warm-mist);
   padding-left: 1em;
-  color: var(--ink-dim);
+  color: var(--color-graphite);
 }
 .prose-chat table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.92em;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   display: block;
   overflow-x: auto;
 }
 .prose-chat th,
 .prose-chat td {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-warm-mist);
   padding: 6px 10px;
   text-align: left;
 }
 .prose-chat th {
-  background: var(--bg-raised);
-  font-weight: 600;
-  color: var(--ink-dim);
-  font-family: var(--font-mono);
-  font-size: 0.82em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  background: var(--color-soft-paper);
+  font-weight: 500;
+  color: var(--color-graphite);
+  font-size: var(--text-body-sm);
 }
 .prose-chat strong {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 500; /* no 600+ anywhere */
 }
 .prose-chat hr {
   border: none;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-warm-mist);
 }

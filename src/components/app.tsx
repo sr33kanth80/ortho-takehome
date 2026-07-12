@@ -126,7 +126,7 @@ function ChatPane({
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[760px] px-6 py-8">
+        <div className="mx-auto w-full max-w-[900px] px-6 py-8">
           {empty ? (
             <EmptyState onPick={(t) => sendMessage({ text: t })} />
           ) : (
@@ -142,7 +142,7 @@ function ChatPane({
                 </div>
               )}
               {error && (
-                <div className="rounded-lg border border-[#4a2c26] bg-[#231412] px-4 py-3 text-[13.5px] text-[var(--err)]">
+                <div className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-raised)] px-4 py-3 text-[14px] leading-[1.43] text-[var(--err)]">
                   Something went wrong: {error.message || "request failed"}.{" "}
                   <button
                     type="button"
@@ -161,14 +161,14 @@ function ChatPane({
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-[760px] px-6 pb-5">
+      <div className="mx-auto w-full max-w-[900px] px-6 pb-5">
         <Composer
           disabled={streaming}
           streaming={streaming}
           onSend={(text) => sendMessage({ text })}
           onStop={stop}
         />
-        <p className="mt-2 text-center font-[family-name:var(--font-mono)] text-[10.5px] text-[var(--ink-faint)]">
+        <p className="mt-2 text-center text-[11px] leading-[1.43] text-[var(--ink-faint)]">
           answers are grounded in live paid API calls — costs shown per tool call
         </p>
       </div>
@@ -179,10 +179,10 @@ function ChatPane({
 function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-      <div className="mb-3 font-[family-name:var(--font-display)] text-[44px] leading-tight">
+      <div className="mb-3 text-[32px] font-medium leading-tight text-[var(--ink)]">
         Ask the real world.
       </div>
-      <p className="mb-10 max-w-md text-[14.5px] text-[var(--ink-dim)]">
+      <p className="mb-10 max-w-md text-[14px] leading-[1.43] text-[var(--ink-dim)]">
         Meridian answers with live data — company profiles, people &amp; contacts, web and news
         results — drawn from Orthogonal&apos;s API catalog, with every cent accounted for.
       </p>
@@ -193,7 +193,7 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
             type="button"
             onClick={() => onPick(s)}
             style={{ animationDelay: `${i * 70}ms` }}
-            className="msg-enter rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-4 py-3 text-left text-[13px] leading-snug text-[var(--ink-dim)] transition-colors hover:border-[var(--accent-dim)] hover:text-[var(--ink)]"
+            className="msg-enter rounded-[16px] bg-[var(--bg-raised)] px-4 py-3 text-left text-[14px] leading-[1.43] text-[var(--ink-dim)] shadow-[var(--shadow-subtle)] transition-colors hover:text-[var(--ink)]"
           >
             {s}
           </button>

@@ -19,7 +19,7 @@ export function Message({ message }: { message: UIMessage }) {
       .join("");
     return (
       <div className="msg-enter flex justify-end">
-        <div className="max-w-[85%] rounded-xl rounded-br-sm border border-[var(--border)] bg-[var(--user-bubble)] px-4 py-2.5 whitespace-pre-wrap">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-[16px] border border-[var(--border)] bg-[var(--bg-raised)] px-4 py-2.5 text-[16px] leading-[1.5]">
           {text}
         </div>
       </div>
@@ -29,11 +29,9 @@ export function Message({ message }: { message: UIMessage }) {
   return (
     <div className="msg-enter">
       <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="font-[family-name:var(--font-display)] text-[15px] tracking-wide text-[var(--accent)]">
-          Meridian
-        </span>
+        <span className="text-[14px] font-medium leading-[1.43] text-[var(--ink)]">Meridian</span>
         {meta?.costCents !== undefined && meta.costCents > 0 && (
-          <span className="font-[family-name:var(--font-mono)] text-[11px] text-[var(--ink-faint)]">
+          <span className="text-[11px] leading-[1.43] text-[var(--ink-faint)]">
             turn cost {meta.costCents}¢
           </span>
         )}

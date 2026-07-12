@@ -1,23 +1,13 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Instrument_Serif } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+// The design system's pplxSans is proprietary; the spec names Inter as its
+// substitute. Weights capped at 400/500 per the "no bold" rule.
+const inter = Inter({
+  variable: "--font-pplxsans",
   subsets: ["latin"],
   weight: ["400", "500"],
-});
-
-const instrument = Instrument_Serif({
-  variable: "--font-instrument",
-  subsets: ["latin"],
-  weight: "400",
 });
 
 export const metadata: Metadata = {
@@ -32,10 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${plexSans.variable} ${plexMono.variable} ${instrument.variable} h-full`}
-    >
+    <html lang="en" className={`${inter.variable} h-full`}>
       <body className="h-full overflow-hidden">{children}</body>
     </html>
   );
