@@ -192,7 +192,7 @@ function MeridianWorkspace({ initialConversationId, initialRecipe, user, guestRu
         onSelect={openConversation}
         onNew={guestLocked ? onRequireAuth : newConversation}
         onDelete={deleteConversation}
-        onHome={guestLocked ? onRequireAuth : newConversation}
+        onHome={newConversation}
         onSignOut={async () => {
           if (!user) {
             onRequireAuth();
