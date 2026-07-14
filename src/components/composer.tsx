@@ -68,10 +68,17 @@ export function Composer({ disabled, streaming, onSend, onStop, large = false }:
             onClick={submit}
             disabled={!value.trim() || disabled}
             title="Send (Enter)"
-            className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-[var(--ink)] text-[var(--color-parchment)] transition-opacity hover:opacity-90 disabled:opacity-30"
+            className="group flex h-8 w-8 items-center justify-center rounded-[12px] bg-[var(--color-forest-ink)] text-[var(--color-parchment)] transition-opacity hover:opacity-90 disabled:opacity-30"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden
+              className="transition-transform duration-500 ease-in-out group-hover:rotate-[360deg]"
+            >
+              <path d="M12 1 Q13 11 23 12 Q13 13 12 23 Q11 13 1 12 Q11 11 12 1 Z" fill="currentColor" />
             </svg>
           </button>
         )}
