@@ -5,14 +5,15 @@ import type { ConversationSummary } from "@/lib/db/store";
 interface Props {
   conversations: ConversationSummary[];
   activeId: string | null;
-  persistent: boolean;
+  userEmail: string;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
   onHome: () => void;
+  onSignOut: () => void;
 }
 
-export function Sidebar({ conversations, activeId, persistent, onSelect, onNew, onDelete, onHome }: Props) {
+export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, onDelete, onHome, onSignOut }: Props) {
   return (
     <aside className="meridian-sidebar flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
       {/* brand mark — Getclockwise diamond/compass glyph + wordmark; returns home */}
@@ -100,15 +101,11 @@ export function Sidebar({ conversations, activeId, persistent, onSelect, onNew, 
         )}
       </nav>
 
-      {!persistent && (
-        <div className="border-t border-[var(--border)] px-4 py-3">
-          <p className="text-[12px] leading-[1.43] text-[var(--ink-faint)]">
-            Ephemeral mode: no database configured; history is kept in memory and resets when the server restarts.
-          </p>
-        </div>
-      )}
-
       <div className="border-t border-[var(--border)] px-4 py-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="truncate text-[11px] text-[var(--ink-faint)]" title={userEmail}>{userEmail}</p>
+          <button type="button" onClick={onSignOut} className="shrink-0 text-[11px] text-[var(--accent)] underline underline-offset-2">{userEmail.includes("@") ? "Sign out" : "Sign in"}</button>
+        </div>
         <p className="text-[11px] leading-[1.43] text-[var(--ink-faint)]">
           data via{" "}
           <a

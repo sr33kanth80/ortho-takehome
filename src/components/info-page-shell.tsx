@@ -9,18 +9,14 @@ import { MeridianFooter } from "./site-footer";
 export function InfoPageShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [persistent, setPersistent] = useState(true);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const refreshSidebar = useCallback(async () => {
     try {
       const response = await fetch("/api/conversations");
       if (!response.ok) return;
-      const data = (await response.json()) as {
-        conversations: ConversationSummary[];
-        persistent: boolean;
-      };
+      const data = (await response.json()) as { conversations: ConversationSummary[] };
       setConversations(data.conversations);
-      setPersistent(data.persistent);
     } catch {
       /* Informational pages stay usable when history is unavailable. */
     }
@@ -31,13 +27,9 @@ export function InfoPageShell({ children }: { children: ReactNode }) {
     void fetch("/api/conversations")
       .then(async (response) => {
         if (!response.ok) return;
-        const data = (await response.json()) as {
-          conversations: ConversationSummary[];
-          persistent: boolean;
-        };
+        const data = (await response.json()) as { conversations: ConversationSummary[] };
         if (!active) return;
         setConversations(data.conversations);
-        setPersistent(data.persistent);
       })
       .catch(() => {
         /* Informational pages stay usable when history is unavailable. */
@@ -45,6 +37,16 @@ export function InfoPageShell({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/auth/me")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { user: { email: string } | null };
+        setUserEmail(data.user?.email ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   const deleteConversation = async (id: string) => {
@@ -57,11 +59,19 @@ export function InfoPageShell({ children }: { children: ReactNode }) {
       <Sidebar
         conversations={conversations}
         activeId={null}
-        persistent={persistent}
+        userEmail={userEmail ?? "Sign in to save history"}
         onSelect={(id) => router.push("/?conversation=" + encodeURIComponent(id))}
         onNew={() => router.push("/")}
         onDelete={deleteConversation}
         onHome={() => router.push("/")}
+        onSignOut={async () => {
+          if (!userEmail) {
+            router.push("/");
+            return;
+          }
+          await fetch("/api/auth/logout", { method: "POST" });
+          router.push("/");
+        }}
       />
       <main className="info-page-scroll">
         <div className="info-page-frame">{children}</div>

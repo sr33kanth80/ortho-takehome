@@ -87,9 +87,9 @@ export default function PrivacyPage() {
         <section>
           <h2>4. Storage and retention</h2>
           <p>
-            When a database is configured, conversations remain available until they are deleted or the
-            deployment operator applies a retention policy. Without a database, history is held in process memory
-            and disappears when that server process restarts.
+            Conversations are stored in the configured database and remain available until they are deleted or the
+            deployment operator applies a retention policy. Meridian requires that database to enable accounts and
+            saved history.
           </p>
           <p>
             Push-to-talk audio is kept only long enough for transcription. The current implementation deletes a
@@ -102,7 +102,6 @@ export default function PrivacyPage() {
           <h2>5. Your choices</h2>
           <ul>
             <li>You can delete individual conversations from the Meridian sidebar.</li>
-            <li>You can avoid durable storage by using a deployment without a configured database.</li>
             <li>You can choose not to use voice mode or contact-enrichment tools.</li>
             <li>You should remove confidential or unnecessary personal information before submitting a prompt.</li>
           </ul>

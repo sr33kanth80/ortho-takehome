@@ -1,5 +1,6 @@
 import { getVoiceSession, isExpired } from "@/lib/voice/session-store";
 import { executeVoiceTool } from "@/lib/voice/tools";
+import { getCurrentUser } from "@/lib/auth";
 
 /**
  * POST /api/voice/tool — execute one voice function call.
@@ -16,6 +17,8 @@ interface Body {
 }
 
 export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -32,6 +35,7 @@ export async function POST(req: Request) {
   if (!session) {
     return Response.json({ error: "Unknown or expired voice session" }, { status: 404 });
   }
+  if (session.userId !== user.id) return Response.json({ error: "Unknown or expired voice session" }, { status: 404 });
   if (isExpired(session)) {
     return Response.json(
       { ok: false, output: "The voice session time limit was reached. Wrap up the answer.", ended: true },

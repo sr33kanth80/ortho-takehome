@@ -1,14 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { getDb, schema } from "./index";
-
-/**
- * Conversation storage. When a database is configured (DATABASE_URL) it is the
- * source of truth. Otherwise we fall back to a process-local in-memory store so
- * conversation history still works out-of-the-box — it survives navigation and
- * browser refreshes within the running server, but resets when the server
- * restarts (true ephemeral mode). The DB path is unchanged.
- */
 
 export interface ConversationSummary {
   id: string;
@@ -16,134 +8,70 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
-// ── in-memory fallback ──────────────────────────────────────────────────────
-// Stashed on globalThis so state survives HMR module reloads in dev.
-interface MemMessage {
-  id: string;
-  role: UIMessage["role"];
-  parts: UIMessage["parts"];
-  costCents: number;
-  createdAt: number;
-}
-interface MemConversation {
-  id: string;
-  title: string;
-  updatedAt: number;
-  messages: MemMessage[];
-}
-const memStore: Map<string, MemConversation> = ((
-  globalThis as typeof globalThis & { __meridianMem?: Map<string, MemConversation> }
-).__meridianMem ??= new Map());
-
-export async function listConversations(limit = 50): Promise<ConversationSummary[]> {
+function requireDb() {
   const db = getDb();
-  if (!db) {
-    return [...memStore.values()]
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, limit)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        updatedAt: new Date(c.updatedAt).toISOString(),
-      }));
-  }
+  if (!db) throw new Error("DATABASE_URL is required for Meridian accounts and history.");
+  return db;
+}
+
+export async function listConversations(userId: string, limit = 50): Promise<ConversationSummary[]> {
+  const db = requireDb();
   const rows = await db
-    .select({
-      id: schema.conversations.id,
-      title: schema.conversations.title,
-      updatedAt: schema.conversations.updatedAt,
-    })
+    .select({ id: schema.conversations.id, title: schema.conversations.title, updatedAt: schema.conversations.updatedAt })
     .from(schema.conversations)
+    .where(eq(schema.conversations.userId, userId))
     .orderBy(desc(schema.conversations.updatedAt))
     .limit(limit);
-  return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.toISOString() }));
+  return rows.map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
 }
 
-export async function getConversationMessages(conversationId: string): Promise<UIMessage[]> {
-  const db = getDb();
-  if (!db) {
-    const conv = memStore.get(conversationId);
-    if (!conv) return [];
-    return [...conv.messages]
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map((m) => ({
-        id: m.id,
-        role: m.role,
-        parts: m.parts,
-        metadata: { costCents: m.costCents },
-      }));
-  }
+export async function getConversationMessages(userId: string, conversationId: string): Promise<UIMessage[] | null> {
+  const db = requireDb();
+  const [conversation] = await db
+    .select({ id: schema.conversations.id })
+    .from(schema.conversations)
+    .where(and(eq(schema.conversations.id, conversationId), eq(schema.conversations.userId, userId)))
+    .limit(1);
+  if (!conversation) return null;
+
   const rows = await db
     .select()
     .from(schema.messages)
     .where(eq(schema.messages.conversationId, conversationId))
-    .orderBy(schema.messages.createdAt);
-  return rows.map((r) => ({
-    id: r.id,
-    role: r.role as UIMessage["role"],
-    parts: r.parts as UIMessage["parts"],
-    metadata: { costCents: r.costCents },
+    .orderBy(asc(schema.messages.createdAt));
+  return rows.map((row) => ({
+    id: row.id,
+    role: row.role as UIMessage["role"],
+    parts: row.parts as UIMessage["parts"],
+    metadata: { costCents: row.costCents },
   }));
 }
 
-export async function ensureConversation(id: string, title?: string): Promise<void> {
-  const db = getDb();
-  if (!db) {
-    if (!memStore.has(id)) {
-      memStore.set(id, {
-        id,
-        title: title ?? "New conversation",
-        updatedAt: Date.now(),
-        messages: [],
-      });
-    }
-    return;
-  }
-  await db
-    .insert(schema.conversations)
-    .values({ id, title: title ?? "New conversation" })
-    .onConflictDoNothing();
+export async function ensureConversation(userId: string, id: string, title?: string): Promise<void> {
+  const db = requireDb();
+  await db.insert(schema.conversations).values({ id, userId, title: title ?? "New conversation" }).onConflictDoNothing();
+  const [conversation] = await db
+    .select({ userId: schema.conversations.userId })
+    .from(schema.conversations)
+    .where(eq(schema.conversations.id, id))
+    .limit(1);
+  if (!conversation || conversation.userId !== userId) throw new Error("Conversation does not belong to this account.");
 }
 
-/** Derive a short title from the first user message. */
 export function titleFrom(text: string): string {
-  const t = text.trim().replace(/\s+/g, " ");
-  return t.length > 60 ? `${t.slice(0, 57)}...` : t || "New conversation";
+  const title = text.trim().replace(/\s+/g, " ");
+  return title.length > 60 ? `${title.slice(0, 57)}...` : title || "New conversation";
 }
 
 export async function saveMessages(
+  userId: string,
   conversationId: string,
-  msgs: Array<{ message: UIMessage; costCents?: number }>,
-  opts?: { titleIfNew?: string },
+  messages: Array<{ message: UIMessage; costCents?: number }>,
+  options?: { titleIfNew?: string },
 ): Promise<void> {
-  const db = getDb();
-  if (!db) {
-    await ensureConversation(conversationId, opts?.titleIfNew);
-    const conv = memStore.get(conversationId)!;
-    for (const { message, costCents } of msgs) {
-      const existing = conv.messages.find((m) => m.id === message.id);
-      if (existing) {
-        existing.parts = message.parts;
-        existing.costCents = costCents ?? 0;
-      } else {
-        conv.messages.push({
-          id: message.id,
-          role: message.role,
-          parts: message.parts,
-          costCents: costCents ?? 0,
-          createdAt: Date.now() + conv.messages.length, // preserve insertion order
-        });
-      }
-    }
-    conv.updatedAt = Date.now();
-    // Set title only if still the default (first turn).
-    if (opts?.titleIfNew && conv.title === "New conversation") {
-      conv.title = opts.titleIfNew;
-    }
-    return;
-  }
-  await ensureConversation(conversationId, opts?.titleIfNew);
-  for (const { message, costCents } of msgs) {
+  const db = requireDb();
+  await ensureConversation(userId, conversationId, options?.titleIfNew);
+  for (const { message, costCents } of messages) {
     await db
       .insert(schema.messages)
       .values({
@@ -153,34 +81,25 @@ export async function saveMessages(
         parts: message.parts,
         costCents: costCents ?? 0,
       })
-      .onConflictDoUpdate({
-        target: schema.messages.id,
-        set: { parts: message.parts, costCents: costCents ?? 0 },
-      });
+      .onConflictDoUpdate({ target: schema.messages.id, set: { parts: message.parts, costCents: costCents ?? 0 } });
   }
   await db
     .update(schema.conversations)
     .set({ updatedAt: new Date() })
-    .where(eq(schema.conversations.id, conversationId));
-  if (opts?.titleIfNew) {
-    // Set title only if it is still the default (i.e. this is the first turn).
+    .where(and(eq(schema.conversations.id, conversationId), eq(schema.conversations.userId, userId)));
+  if (options?.titleIfNew) {
     await db
       .update(schema.conversations)
-      .set({ title: opts.titleIfNew })
-      .where(
-        and(
-          eq(schema.conversations.id, conversationId),
-          eq(schema.conversations.title, "New conversation"),
-        ),
-      );
+      .set({ title: options.titleIfNew })
+      .where(and(eq(schema.conversations.id, conversationId), eq(schema.conversations.userId, userId), eq(schema.conversations.title, "New conversation")));
   }
 }
 
-export async function deleteConversation(id: string): Promise<void> {
-  const db = getDb();
-  if (!db) {
-    memStore.delete(id);
-    return;
-  }
-  await db.delete(schema.conversations).where(eq(schema.conversations.id, id));
+export async function deleteConversation(userId: string, id: string): Promise<boolean> {
+  const db = requireDb();
+  const deleted = await db
+    .delete(schema.conversations)
+    .where(and(eq(schema.conversations.id, id), eq(schema.conversations.userId, userId)))
+    .returning({ id: schema.conversations.id });
+  return deleted.length > 0;
 }

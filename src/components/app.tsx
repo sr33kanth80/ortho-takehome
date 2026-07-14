@@ -13,16 +13,24 @@ import { Suggestions } from "./suggestions";
 import { VoiceMode } from "./voice";
 import { MeridianFooterDock } from "./site-footer";
 import { LoadingBreadcrumb } from "./ui/animated-loading-svg-text-shimmer";
+import { AuthScreen } from "./auth-screen";
+import type { AuthUser } from "@/lib/auth";
 
 interface AppProps {
   initialConversationId?: string;
   initialRecipe?: string;
+  user: AuthUser | null;
+  authConfigured: boolean;
 }
 
-export function App({ initialConversationId, initialRecipe }: AppProps) {
+export function App(props: AppProps) {
+  if (!props.user) return <AuthScreen configured={props.authConfigured} />;
+  return <AuthenticatedApp {...props} user={props.user} />;
+}
+
+function AuthenticatedApp({ initialConversationId, initialRecipe, user }: AppProps & { user: AuthUser }) {
   const [conversationId, setConversationId] = useState<string>(() => nanoid(12));
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [persistent, setPersistent] = useState(true);
 
   // Persistent chat instances, one per conversation, kept alive for the whole
   // session so an in-flight stream keeps running even when the user navigates
@@ -34,9 +42,8 @@ export function App({ initialConversationId, initialRecipe }: AppProps) {
     try {
       const res = await fetch("/api/conversations");
       if (!res.ok) return;
-      const data = (await res.json()) as { conversations: ConversationSummary[]; persistent: boolean };
+      const data = (await res.json()) as { conversations: ConversationSummary[] };
       setConversations(data.conversations);
-      setPersistent(data.persistent);
     } catch {
       /* sidebar refresh is best-effort */
     }
@@ -68,11 +75,9 @@ export function App({ initialConversationId, initialRecipe }: AppProps) {
         if (!response.ok) return;
         const data = (await response.json()) as {
           conversations: ConversationSummary[];
-          persistent: boolean;
         };
         if (!active) return;
         setConversations(data.conversations);
-        setPersistent(data.persistent);
       })
       .catch(() => {
         /* sidebar refresh is best-effort */
@@ -153,11 +158,15 @@ export function App({ initialConversationId, initialRecipe }: AppProps) {
       <Sidebar
         conversations={conversations}
         activeId={conversationId}
-        persistent={persistent}
+        userEmail={user.email}
         onSelect={openConversation}
         onNew={newConversation}
         onDelete={deleteConversation}
         onHome={newConversation}
+        onSignOut={async () => {
+          await fetch("/api/auth/logout", { method: "POST" });
+          window.location.assign("/");
+        }}
       />
       <ChatPane key={conversationId} chat={activeChat} initialRecipe={initialRecipe} />
     </div>

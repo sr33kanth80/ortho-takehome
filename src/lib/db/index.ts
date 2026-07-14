@@ -4,12 +4,12 @@ import { env, hasDatabase } from "@/lib/env";
 import * as schema from "./schema";
 
 /**
- * Lazy singleton DB connection (postgres.js works well on serverless with
- * small pools; Neon/Vercel Postgres both speak the postgres protocol).
- * Returns null when DATABASE_URL is unset — callers fall back to ephemeral
- * mode so the app remains usable without a database.
+ * Lazy singleton DB connection. postgres.js is suitable for serverless with a
+ * small pool; Neon and Vercel Postgres both expose the standard protocol.
+ *
+ * Returns null when DATABASE_URL is unset. Account and conversation routes
+ * return a clear configuration error instead of exposing shared local memory.
  */
-
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getDb() {

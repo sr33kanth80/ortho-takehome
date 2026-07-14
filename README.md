@@ -29,12 +29,12 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 
 ### Assumptions
 
-- The application currently serves anonymous users. There is no authentication or tenant boundary.
+- Meridian uses a simple email-and-password account system. An opaque, HttpOnly session cookie identifies the account; each conversation is scoped to its owner on the server.
 - A single server-side Orthogonal API key funds inference, data tools, and the default voice pipeline. The key is never sent to the browser.
-- Postgres is optional during evaluation. Without `DATABASE_URL`, the application uses a process-local in-memory conversation store so the complete interface remains usable.
+- Postgres is required for the application. `DATABASE_URL` backs accounts, sessions, and durable conversation history; the app does not fall back to shared process memory.
 - Recipes are transparent prompt templates and research methods, not a separate autonomous runtime. Starting a recipe hands its instructions to the same Meridian agent and cost controls used by ordinary chat.
 - Live API responses are the source of truth when they differ from documentation. Probe scripts were used to validate Orthogonal response shapes and endpoint prices.
-- The current scope prioritizes the Orthogonal integration, agent behavior, cost visibility, resilience, and evaluator experience over commodity authentication work.
+- The current scope uses self-hosted credential auth to keep account setup light while establishing an actual ownership boundary for customer data.
 
 ### Functional requirements
 
@@ -44,8 +44,8 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - Tool inputs, outputs, failures, and attributed costs are visible in the conversation trace.
 - A persistent animated `Cooking` status remains visible for the entire agent turn, including pauses between multiple tool calls and final answer synthesis.
 - Conversation history can be listed, reopened, resumed, and deleted.
+- Accounts can register, sign in, and sign out. History is visible only to the account that created it.
 - An in-flight conversation continues when a user switches to another conversation and returns.
-- The app remains functional without Postgres by using ephemeral process memory.
 - Users can speak to Meridian through a push-to-talk voice interface backed by the same research agent.
 - The landing page includes categorized prompt suggestions and a horizontally scrollable Cookbook of reusable recipes.
 - The Use Cases page presents every recipe and opens its full details in an accessible overlay without navigating away.
@@ -141,7 +141,7 @@ Request body:
 }
 ```
 
-The server requires a non-empty `messages` array, validates it with the AI SDK, and uses only the latest 40 messages. Invalid JSON or malformed messages return `400` with `{ "error": string }`.
+The server requires an authenticated session and a non-empty `messages` array, validates it with the AI SDK, and uses only the latest 40 messages. The submitted user message is saved before model execution, so it remains in the thread if a later model or provider call fails. Invalid JSON or malformed messages return `400` with `{ "error": string }`.
 
 Success returns an AI SDK UI-message event stream containing text deltas, tool-call states, tool results, and final message metadata:
 
@@ -160,20 +160,23 @@ Returns the newest 50 conversation summaries.
 {
   "conversations": [
     { "id": "abc", "title": "Profile stripe.com", "updatedAt": "2026-07-13T12:00:00.000Z" }
-  ],
-  "persistent": true
+  ]
 }
 ```
 
-`persistent` is `false` when `DATABASE_URL` is absent and process memory is being used.
+Returns `401` without a signed-in account. Results are filtered by the current account.
 
 #### `GET /api/conversations/:id`
 
-Returns `{ "id": string, "messages": UIMessage[] }`. Stored cost metadata is restored onto assistant messages.
+Returns `{ "id": string, "messages": UIMessage[] }` for a conversation owned by the current account. Stored cost metadata is restored onto assistant messages.
 
 #### `DELETE /api/conversations/:id`
 
-Deletes the conversation and its messages. Returns `{ "ok": true }`. Postgres uses cascade deletion for messages.
+Deletes a conversation owned by the current account and its messages. Returns `{ "ok": true }`. Postgres uses cascade deletion for messages.
+
+#### `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`
+
+Creates an account, starts an existing account session, or clears the current session. Register and login accept `{ "email": string, "password": string }`; passwords must be at least 10 characters. Sessions are random opaque tokens, stored only as SHA-256 hashes in Postgres, and delivered as `HttpOnly`, `SameSite=Lax` cookies.
 
 #### `GET /api/voice/session`
 
@@ -243,6 +246,7 @@ Serves a short-lived, non-cacheable recording to the speech-to-text provider. Th
 ```text
 conversations
   id            text primary key
+  user_id       text foreign key -> users.id on delete cascade
   title         text not null
   created_at    timestamptz not null
   updated_at    timestamptz not null
@@ -256,14 +260,26 @@ messages
   created_at       timestamptz not null
 
 index: messages(conversation_id, created_at)
-relationship: conversations 1 -> many messages
+relationship: users 1 -> many conversations; conversations 1 -> many messages
+```
+
+```text
+users
+  id            text primary key
+  email         text unique not null
+  password_hash text not null (bcrypt)
+
+sessions
+  id            text primary key
+  user_id       text foreign key -> users.id on delete cascade
+  token_hash    text unique not null
+  expires_at    timestamptz not null
 ```
 
 `messages.parts` stores the AI SDK `UIMessage.parts` array verbatim. A message can contain ordered text, tool inputs, tool outputs, states, and metadata. JSONB preserves replay fidelity without introducing a brittle set of normalized tool-call tables. `cost_cents` is denormalized because per-turn cost is displayed frequently.
 
 #### Process-local entities
 
-- **In-memory conversations:** mirror the relational model when Postgres is absent and are stored on `globalThis` so development hot reloads do not erase them.
 - **Cache entries:** `{ value, expiresAt }`, bounded to 500 entries by an LRU-like `Map` policy.
 - **Voice sessions:** opaque ID, text history, creation time, and a session `SpendTracker`.
 - **Transient audio:** unguessable ID, bytes, MIME type, and expiration time.
@@ -286,13 +302,6 @@ Why Drizzle:
 - The schema remains visible as TypeScript rather than hidden behind generated models.
 - It provides typed queries and migrations with little runtime abstraction.
 - It works cleanly with the serverless-friendly `postgres` driver.
-
-Why an in-memory fallback:
-
-- A reviewer can run the complete interaction with only an Orthogonal key.
-- Missing database configuration does not silently disable history controls.
-- The UI clearly labels ephemeral mode.
-- The tradeoff is explicit: process-local history is not durable or shared across instances.
 
 ### Additional infrastructure
 
@@ -388,9 +397,9 @@ The default voice flow is browser recording -> Orthogonal speech-to-text -> exis
 
 ## Tradeoffs
 
-- **No authentication:** more time went into Orthogonal integration, tool safety, and observable behavior. The consequence is that the shared API key cannot safely fund public anonymous traffic.
+- **Self-hosted credential auth:** this keeps the setup simple and establishes ownership now, but delegates email verification, password recovery, MFA, SSO, and account governance to future work.
 - **Process-local cache:** zero additional service is required, but deduplication and catalog caching are not coordinated across server instances.
-- **Optional in-memory history:** excellent evaluator setup and local usability, but history disappears on restart and is not shared across instances.
+- **Database-required history:** customers get durable, owner-scoped conversations, but a database must be provisioned before the app can be used.
 - **Last-two-message persistence:** simple for the append-only interface, but it would not correctly model arbitrary edits to older messages.
 - **40-message history cap:** bounds model context and cost, but long conversations lose early context without summarization.
 - **12,000-character tool-result cap:** prevents oversized model inputs, but a very large upstream response may be truncated.
@@ -405,7 +414,7 @@ The default voice flow is browser recording -> Orthogonal speech-to-text -> exis
 
 If this application were deployed to production today, the primary concerns would be:
 
-1. **Anonymous users can spend the shared Orthogonal balance.** There is no authentication, account ownership, per-user quota, or global daily circuit breaker.
+1. **Authentication is deliberately basic.** Email/password accounts establish ownership, but there is no email verification, password reset, MFA, SSO, rate limiting, or per-user quota yet.
 2. **There is no rate limiter.** Parallel requests can each receive a fresh per-turn budget.
 3. **Spend and deduplication are instance-local.** Separate serverless instances do not share their `SpendTracker` or cache state.
 4. **Inference spend is missing from the ledger.** The UI reports data-tool charges, not total Orthogonal spend including model calls.
@@ -424,8 +433,8 @@ If this application were deployed to production today, the primary concerns woul
 
 ### If I had another week
 
-1. **Authentication and tenant ownership.** Add an auth provider, a `users` table, and `user_id` on conversations. This is the prerequisite for safely inviting real customers.
-2. **Rate limits and spend ledgers.** Enforce per-user, per-IP, and global daily limits in shared storage. Record inference and data charges in one ledger.
+1. **Account hardening and rate limits.** Add email verification, password reset, MFA or SSO, and per-user, per-IP, and global daily limits in shared storage.
+2. **Spend ledgers.** Record inference and data charges in one ledger.
 3. **Redis-backed cache and voice sessions.** Make deduplication, budgets, sessions, and temporary state correct across concurrent instances.
 4. **Agent evaluation fixtures.** Add representative prompts with expected tool choices, maximum cost, and answer-grounding checks. Tool selection is the core product behavior and needs regression protection.
 5. **Structured observability.** Add request IDs, tool latency, provider errors, spend velocity, and alerts.
@@ -455,7 +464,7 @@ If this application were deployed to production today, the primary concerns woul
 
 ### July 13, 2026: Product completion pass
 
-- Added process-local conversation persistence when Postgres is absent.
+- Added email-and-password accounts with opaque HttpOnly sessions, owner-scoped conversations, and immediate persistence of submitted chat messages.
 - Kept independent chat streams alive while navigating between conversations.
 - Added push-to-talk voice with Orthogonal speech-to-text and text-to-speech, shared tools, and session spend limits.
 - Added categorized, horizontally scrollable prompt suggestions.
@@ -496,7 +505,7 @@ The minimum configuration is:
 ORTHOGONAL_API_KEY=orth_live_xxxxxxxxxxxxxxxxxxxx
 ```
 
-That key powers the default LLM path, data tools, and default voice provider. Without `DATABASE_URL`, the sidebar clearly reports ephemeral mode and history remains available only while the server process is alive.
+That key powers the default LLM path, data tools, and default voice provider. Meridian also requires a Postgres database for accounts and saved history.
 
 For durable Postgres history:
 
@@ -540,7 +549,7 @@ VOICE_PUBLIC_BASE_URL=https://your-public-origin.example
 | `LLM_MODEL` | No | Provider default | Model override |
 | `ANTHROPIC_API_KEY` | Conditional | N/A | Required for direct Anthropic mode |
 | `OPENAI_API_KEY` | Conditional | N/A | Required for direct OpenAI mode |
-| `DATABASE_URL` | No | N/A | Enables durable Postgres history |
+| `DATABASE_URL` | Yes | N/A | Accounts, sessions, and durable Postgres history |
 | `MAX_SPEND_CENTS_PER_TURN` | No | `50` | Paid data-tool budget per chat turn |
 | `MAX_AGENT_STEPS` | No | `8` | Maximum model/tool steps per turn |
 | `VOICE_PROVIDER` | No | `orthogonal` | `orthogonal` or experimental `xai` |

@@ -18,6 +18,7 @@ export interface VoiceTurn {
 
 interface VoiceSession {
   id: string;
+  userId: string;
   spend: SpendTracker;
   startedAt: number;
   /** Plain-text conversation history for multi-turn context. */
@@ -36,11 +37,12 @@ function sweep() {
   }
 }
 
-export function createVoiceSession(): VoiceSession {
+export function createVoiceSession(userId: string): VoiceSession {
   sweep();
   const id = nanoid(16);
   const session: VoiceSession = {
     id,
+    userId,
     spend: new SpendTracker(env.voice.maxSpendCents),
     startedAt: Date.now(),
     history: [],

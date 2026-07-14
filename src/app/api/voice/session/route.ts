@@ -2,6 +2,7 @@ import { env, hasVoice } from "@/lib/env";
 import { createVoiceSession } from "@/lib/voice/session-store";
 import { VOICE_TOOL_DEFS } from "@/lib/voice/tools";
 import { VOICE_INSTRUCTIONS } from "@/lib/voice/config";
+import { getCurrentUser } from "@/lib/auth";
 
 /**
  * POST /api/voice/session — start a "Talk to Meridian" session.
@@ -16,6 +17,8 @@ import { VOICE_INSTRUCTIONS } from "@/lib/voice/config";
  * Degrades gracefully: `configured: false` when the required key is missing.
  */
 export async function POST() {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   if (!hasVoice()) {
     return Response.json(
       {
@@ -29,7 +32,7 @@ export async function POST() {
     );
   }
 
-  const session = createVoiceSession();
+  const session = createVoiceSession(user.id);
   const caps = {
     maxSessionSeconds: env.voice.maxSessionSeconds,
     maxSpendCents: env.voice.maxSpendCents,
@@ -78,6 +81,8 @@ export async function POST() {
 }
 
 /** GET — capability probe for the UI. */
-export function GET() {
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   return Response.json({ configured: hasVoice(), provider: env.voice.provider });
 }

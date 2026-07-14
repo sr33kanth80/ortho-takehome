@@ -6,6 +6,7 @@ import { getVoiceSession, isExpired } from "@/lib/voice/session-store";
 import { putAudio, deleteAudio } from "@/lib/voice/audio-store";
 import { transcribe, synthesize } from "@/lib/voice/orthogonal-audio";
 import { VOICE_INSTRUCTIONS } from "@/lib/voice/config";
+import { getCurrentUser } from "@/lib/auth";
 
 export const maxDuration = 120;
 
@@ -19,6 +20,8 @@ export const maxDuration = 120;
  *   3. text-to-speech                               → spoken reply
  */
 export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   let form: FormData;
   try {
     form = await req.formData();
@@ -33,6 +36,7 @@ export async function POST(req: Request) {
 
   const session = getVoiceSession(sessionId);
   if (!session) return Response.json({ error: "Unknown or expired voice session" }, { status: 404 });
+  if (session.userId !== user.id) return Response.json({ error: "Unknown or expired voice session" }, { status: 404 });
   if (isExpired(session)) {
     return Response.json({ ended: true, text: "This call has reached its time limit." });
   }

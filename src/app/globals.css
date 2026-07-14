@@ -156,6 +156,54 @@ body {
   outline-offset: 3px;
 }
 
+.meridian-paper-grid {
+  background:
+    linear-gradient(90deg, rgba(3, 63, 46, 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(rgba(3, 63, 46, 0.025) 1px, transparent 1px) 0 0 / 48px 48px;
+}
+
+.meridian-auth-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.meridian-auth-input:focus {
+  border-color: var(--color-vivid-emerald);
+  box-shadow: 0 0 0 3px rgba(3, 152, 97, 0.12);
+}
+
+.meridian-primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 32px;
+  border: 0;
+  border-radius: 4px 10px 7px 4px;
+  background: var(--color-forest-ink);
+  color: white;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 18px;
+  padding: 12px 15px;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.meridian-primary-button:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 rgba(3, 63, 46, 0.18);
+}
+
+.meridian-primary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 /* ── reveal animations (kept quiet to match the flat language) ───────── */
 @keyframes rise {
   from {

@@ -2,8 +2,8 @@
  * Centralised, validated environment access.
  *
  * We deliberately avoid throwing at module-load time for optional values so the
- * app can boot in a degraded-but-useful mode (e.g. no DATABASE_URL -> ephemeral
- * conversations). Required values are validated lazily where they are consumed.
+ * app can explain configuration requirements without failing at import time.
+ * Required values are validated lazily where they are consumed.
  */
 
 function optional(name: string): string | undefined {
