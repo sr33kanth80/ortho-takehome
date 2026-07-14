@@ -259,7 +259,7 @@ function ChatPane({
         <div className="landing-page-scroll flex-1 overflow-y-auto">
           <div className="landing-hero mx-auto flex w-full max-w-[680px] flex-col px-6">
             <div className="mb-3 flex justify-center">
-              <span className="cook-heading relative font-[family-name:var(--font-display)] text-[44px] leading-[1.05] text-[var(--color-forest-ink)]">
+              <span className="cook-heading relative font-[family-name:var(--font-display)] text-[52px] leading-[1.02] text-[var(--color-forest-ink)] sm:text-[58px]">
                 <span className="cook-steam" aria-hidden>
                   <i />
                   <i />
@@ -269,7 +269,7 @@ function ChatPane({
                   <i />
                   <i />
                 </span>
-                Let&apos;s Cook
+                Let&apos;s start cooking
               </span>
             </div>
             <p className="mx-auto mb-8 max-w-[560px] text-center text-[15px] leading-[1.5] text-[var(--ink-dim)]">

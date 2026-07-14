@@ -2,7 +2,7 @@
 
 Meridian is a web-based AI research assistant that answers questions with live data through [Orthogonal](https://orthogonal.com). It combines conversational research, visible tool execution, per-call cost reporting, reusable research recipes, persistent history, and optional push-to-talk voice in one interface.
 
-**Last updated:** July 13, 2026
+**Last updated:** July 14, 2026
 
 The application exposes this exact file at `/readme`. The global **README** button in the top-right corner of every page opens that route, so the repository document and evaluator-facing document have one source of truth.
 
@@ -10,7 +10,7 @@ The application exposes this exact file at `/readme`. The global **README** butt
 
 Bera, I treated Meridian as the smallest honest version of the product we intended to build around Orthogonal: one conversational surface where a user can ask for research, the assistant can find the right live API, run it, and show the user exactly what happened and what it cost.
 
-I implemented that through a hybrid agent. The common paths are curated for reliability: company research, contacts, web, and news. The long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo.
+I implemented that through a hybrid agent. The common paths are curated for reliability: company research, contacts, web, and news. The long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo. Someone can try one completed research run before being asked to create an account; when they do, Meridian carries that first thread into the new account.
 
 Visually, I implemented Orthogonal's design but with a medium-y, rolex-esque design: editorial typography, parchment, forest ink, restrained emerald accents, and a sense of considered craft. The goal was to make Meridian feel calm, premium, and trustworthy while still making the live-data machinery legible underneath.
 
@@ -30,6 +30,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 ### Assumptions
 
 - Meridian uses a simple email-and-password account system. An opaque, HttpOnly session cookie identifies the account; each conversation is scoped to its owner on the server.
+- The public landing page is Meridian itself, not a signup wall. A browser receives one completed guest research run, then must create an account to continue or preserve that thread.
 - A single server-side Orthogonal API key funds inference, data tools, and the default voice pipeline. The key is never sent to the browser.
 - Postgres is required for the application. `DATABASE_URL` backs accounts, sessions, and durable conversation history; the app does not fall back to shared process memory.
 - Recipes are transparent prompt templates and research methods, not a separate autonomous runtime. Starting a recipe hands its instructions to the same Meridian agent and cost controls used by ordinary chat.
@@ -45,6 +46,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - A persistent animated `Cooking` status remains visible for the entire agent turn, including pauses between multiple tool calls and final answer synthesis.
 - Conversation history can be listed, reopened, resumed, and deleted.
 - Accounts can register, sign in, and sign out. History is visible only to the account that created it.
+- Visitors can complete one guest research run before Meridian asks them to create an account; the first thread is carried through account creation in browser session storage and persisted on the next authenticated turn.
 - An in-flight conversation continues when a user switches to another conversation and returns.
 - Users can speak to Meridian through a push-to-talk voice interface backed by the same research agent.
 - The landing page includes categorized prompt suggestions and a horizontally scrollable Cookbook of reusable recipes.
@@ -62,7 +64,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - **Security:** secrets stay server-side, paid calls pass through a budget gate, tool outputs are length-bounded, and Orthogonal requests have a 30-second timeout.
 - **Accessibility:** interactive cards are keyboard controls; recipe dialogs support Escape, backdrop dismissal, focus containment, and focus restoration.
 - **Type safety:** the application uses strict TypeScript, Zod tool schemas, typed Orthogonal responses, and AI SDK message validation.
-- **Graceful degradation:** missing optional database or voice configuration does not prevent text research from working.
+- **Graceful degradation:** optional voice configuration does not prevent text research from working. Database configuration is required because accounts and history are product requirements.
 
 ### System design diagram
 
@@ -87,14 +89,15 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 |                                      +--> API catalog             |
 |                                      +--> TTL cache               |
 |                                                                  |
-|  Conversation store --------------------> Postgres or memory      |
+|  Accounts + conversation store ---------> Postgres                |
+|  Completed guest-run marker ------------> HttpOnly browser cookie |
 |  /readme -------------------------------> README.md               |
 +------------------------------------------------------------------+
 ```
 
 ### Runtime request flow
 
-1. The browser sends the visible `UIMessage[]` history and a client-generated conversation ID to `POST /api/chat`.
+1. The browser sends the visible `UIMessage[]` history and a client-generated conversation ID to `POST /api/chat`. A signed-in account can continue normally; a guest browser can complete one run.
 2. The server validates and caps history at the latest 40 messages.
 3. A new `SpendTracker` and toolset are created for the turn.
 4. The AI SDK runs the selected model for at most `MAX_AGENT_STEPS` steps.
@@ -102,7 +105,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 6. Paid calls pass through the budget check. Successful identical calls may be served from the TTL cache.
 7. Text and tool events stream to the browser through the AI SDK UI-message protocol.
 8. Final cost metadata is attached to the assistant message.
-9. The trailing user and assistant messages are saved to Postgres or the in-memory fallback. Persistence is best-effort and cannot terminate the user-facing response.
+9. For an authenticated account, the visible history is saved to Postgres before execution and the final assistant state is upserted after streaming. A completed guest run remains only in the browser until the visitor creates an account; its client-side history is then sent and persisted with the first authenticated continuation.
 
 ### Major components
 
@@ -114,7 +117,8 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 | `src/lib/tools/index.ts` | Curated tools, dynamic catalog tools, structured tool failures |
 | `src/lib/tools/spend.ts` | Server-side per-turn and per-session spend accounting |
 | `src/lib/orthogonal/client.ts` | Authenticated Orthogonal search, details, list, and run requests; cache and error normalization |
-| `src/lib/db/store.ts` | Postgres-backed history with an in-memory fallback |
+| `src/lib/db/store.ts` | Postgres-backed, owner-scoped conversation history |
+| `src/lib/auth.ts` | Password sessions, account lookup, and completed-guest-run cookie helpers |
 | `src/lib/voice/*` | Voice sessions, transient recordings, Orthogonal STT/TTS, and realtime-tool bridge |
 | `src/lib/recipes.ts` | Shared recipe definitions used by the landing Cookbook and Use Cases overlays |
 | `src/app/readme/page.tsx` | Reads and renders this exact `README.md` inside the application |
@@ -124,7 +128,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 
 #### `POST /api/chat`
 
-Runs one assistant turn.
+Runs one assistant turn. Signed-in users can keep researching. A guest browser can complete one turn; after the browser has recorded that completed run, further calls return `401` until the visitor creates an account.
 
 Request body:
 
@@ -177,6 +181,10 @@ Deletes a conversation owned by the current account and its messages. Returns `{
 #### `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`
 
 Creates an account, starts an existing account session, or clears the current session. Register and login accept `{ "email": string, "password": string }`; passwords must be at least 10 characters. Sessions are random opaque tokens, stored only as SHA-256 hashes in Postgres, and delivered as `HttpOnly`, `SameSite=Lax` cookies.
+
+#### `POST /api/guest/complete`
+
+Sets a short, HttpOnly browser marker after the client has received a completed guest response. This is intentionally separate from the streaming chat response because HTTP cookies cannot be set after a stream starts. It makes the account prompt appear after a successful first run rather than before it.
 
 #### `GET /api/voice/session`
 
@@ -283,6 +291,7 @@ sessions
 - **Cache entries:** `{ value, expiresAt }`, bounded to 500 entries by an LRU-like `Map` policy.
 - **Voice sessions:** opaque ID, text history, creation time, and a session `SpendTracker`.
 - **Transient audio:** unguessable ID, bytes, MIME type, and expiration time.
+- **Guest-run marker:** an HttpOnly browser cookie, set after one completed unauthenticated research run. The guest thread itself is kept in `sessionStorage` only until account creation.
 - **Recipes:** static typed definitions containing slug, title, category, description, input, output, tools, method, cost safeguard, and agent prompt.
 
 ### Database choice
@@ -400,7 +409,8 @@ The default voice flow is browser recording -> Orthogonal speech-to-text -> exis
 - **Self-hosted credential auth:** this keeps the setup simple and establishes ownership now, but delegates email verification, password recovery, MFA, SSO, and account governance to future work.
 - **Process-local cache:** zero additional service is required, but deduplication and catalog caching are not coordinated across server instances.
 - **Database-required history:** customers get durable, owner-scoped conversations, but a database must be provisioned before the app can be used.
-- **Last-two-message persistence:** simple for the append-only interface, but it would not correctly model arbitrary edits to older messages.
+- **One guest run per browser:** this keeps the public landing page useful without making anonymous usage the product. It is cookie-based, so it is a conversion boundary rather than a strong anti-abuse control.
+- **Client-supplied history persistence:** preserving a newly claimed guest thread means the first authenticated continuation replays browser-held history into Postgres. It is practical for this small product, but arbitrary edits to old messages are not a first-class workflow.
 - **40-message history cap:** bounds model context and cost, but long conversations lose early context without summarization.
 - **12,000-character tool-result cap:** prevents oversized model inputs, but a very large upstream response may be truncated.
 - **Simulated streaming on the default provider:** Orthogonal `/v1/run` returns a complete JSON response, so the default model streams at agent-step granularity. Direct Anthropic or OpenAI restores token streaming.
@@ -414,7 +424,7 @@ The default voice flow is browser recording -> Orthogonal speech-to-text -> exis
 
 If this application were deployed to production today, the primary concerns would be:
 
-1. **Authentication is deliberately basic.** Email/password accounts establish ownership, but there is no email verification, password reset, MFA, SSO, rate limiting, or per-user quota yet.
+1. **Authentication is deliberately basic.** Email/password accounts establish ownership, but there is no email verification, password reset, MFA, SSO, rate limiting, or per-user quota yet. The one-run guest boundary is cookie-based and can be bypassed by clearing browser data.
 2. **There is no rate limiter.** Parallel requests can each receive a fresh per-turn budget.
 3. **Spend and deduplication are instance-local.** Separate serverless instances do not share their `SpendTracker` or cache state.
 4. **Inference spend is missing from the ledger.** The UI reports data-tool charges, not total Orthogonal spend including model calls.
@@ -479,13 +489,20 @@ If this application were deployed to production today, the primary concerns woul
 - Replaced the default favicon with Meridian's compass mark through the App Router icon metadata.
 - Updated lint, strict TypeScript, production build, and browser-interaction verification after the completion pass.
 
+### July 14, 2026: Account and guest-access pass
+
+- Created the production Postgres schema for users, sessions, owner-scoped conversations, and messages.
+- Replaced anonymous process-memory history with account-backed Postgres history.
+- Made the AI chat experience the public landing page again: one completed guest research run is available before account creation is required.
+- Preserved that first guest thread through account creation so a new user can continue the same conversation.
+
 ## Running the Application
 
 ### Prerequisites
 
 - Node.js compatible with Next.js 16
 - An Orthogonal account and API key
-- Optional Postgres database for durable history
+- A Postgres database for accounts and durable history
 
 ### Setup
 
@@ -507,7 +524,7 @@ ORTHOGONAL_API_KEY=orth_live_xxxxxxxxxxxxxxxxxxxx
 
 That key powers the default LLM path, data tools, and default voice provider. Meridian also requires a Postgres database for accounts and saved history.
 
-For durable Postgres history:
+For Meridian accounts and durable history:
 
 ```env
 DATABASE_URL=postgres://user:pass@host:5432/ortho

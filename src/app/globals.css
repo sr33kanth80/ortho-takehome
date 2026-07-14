@@ -309,12 +309,12 @@ body {
 
 /* ── "Let's Cook" hero — steam wisps rising off the wordmark ──────────── */
 .landing-hero {
-  padding-top: clamp(124px, 16vh, 176px);
+  padding-top: clamp(158px, 20vh, 224px);
 }
 
 @media (max-height: 720px) {
   .landing-hero {
-    padding-top: clamp(96px, 13vh, 128px);
+    padding-top: clamp(120px, 16vh, 156px);
   }
 }
 
