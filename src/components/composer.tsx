@@ -14,6 +14,7 @@ interface Props {
 export function Composer({ disabled, streaming, onSend, onStop, large = false }: Props) {
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const canSubmit = Boolean(value.trim()) && !disabled;
 
   // autosize — grows with content up to a ceiling. The taller resting height
   // for `large` mode is enforced via CSS min-height, not here.
@@ -40,6 +41,7 @@ export function Composer({ disabled, streaming, onSend, onStop, large = false }:
       <textarea
         ref={ref}
         value={value}
+        disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
@@ -66,9 +68,11 @@ export function Composer({ disabled, streaming, onSend, onStop, large = false }:
           <button
             type="button"
             onClick={submit}
-            disabled={!value.trim() || disabled}
+            disabled={!canSubmit}
             title="Send (Enter)"
-            className="group flex h-8 w-8 items-center justify-center rounded-[12px] bg-[var(--color-forest-ink)] text-[var(--color-parchment)] transition-opacity hover:opacity-90 disabled:opacity-30"
+            className={`group flex h-8 w-8 items-center justify-center rounded-[12px] bg-[var(--color-forest-ink)] text-[var(--color-parchment)] transition-opacity hover:opacity-90 ${
+              canSubmit ? "opacity-100" : "opacity-30"
+            }`}
           >
             <svg
               width="17"
