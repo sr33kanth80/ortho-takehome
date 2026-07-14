@@ -279,7 +279,7 @@ function ChatPane({
 
             <Composer
               large
-              disabled={streaming || guestLocked}
+              disabled={streaming}
               streaming={streaming}
               onSend={send}
               onStop={stop}
@@ -347,7 +347,7 @@ function ChatPane({
 
       <div className="mx-auto w-full max-w-[900px] px-6 pb-5">
         <Composer
-          disabled={streaming || guestLocked}
+          disabled={streaming}
           streaming={streaming}
           onSend={send}
           onStop={stop}

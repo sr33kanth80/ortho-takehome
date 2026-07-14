@@ -41,7 +41,6 @@ export function Composer({ disabled, streaming, onSend, onStop, large = false }:
       <textarea
         ref={ref}
         value={value}
-        disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
