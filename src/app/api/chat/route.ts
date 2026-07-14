@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       }
       return undefined;
     },
-    onFinish: async ({ messages: finalMessages, isContinuation: _ }) => {
+    onFinish: async ({ messages: finalMessages }) => {
       if (!conversationId) return;
       try {
         const lastUser = [...finalMessages].reverse().find((m) => m.role === "user");

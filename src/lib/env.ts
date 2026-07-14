@@ -48,6 +48,37 @@ export const env = {
       return optional("OPENAI_API_KEY");
     },
   },
+  // "Talk to Meridian" voice mode. Two providers:
+  //  - "orthogonal" (default): fully single-key — speech-to-text and
+  //    text-to-speech run through Orthogonal's catalog (ElevenLabs), chained
+  //    around the existing text agent. Push-to-talk.
+  //  - "xai": realtime Grok Voice over WebRTC (needs XAI_API_KEY).
+  voice: {
+    get provider() {
+      return (optional("VOICE_PROVIDER") ?? "orthogonal") as "orthogonal" | "xai";
+    },
+    /** ElevenLabs voice id used for TTS in the orthogonal provider. */
+    get elevenVoiceId() {
+      return optional("VOICE_ELEVEN_VOICE_ID") ?? "21m00Tcm4TlvDq8ikWAM"; // "Rachel"
+    },
+    // xAI Grok Voice (only used when VOICE_PROVIDER=xai).
+    get apiKey() {
+      return optional("XAI_API_KEY");
+    },
+    get model() {
+      return optional("XAI_VOICE_MODEL") ?? "grok-voice-latest";
+    },
+    get voice() {
+      return optional("XAI_VOICE") ?? "eve";
+    },
+    /** Hard per-voice-session caps (safety: voice bills per turn + per tool call). */
+    get maxSessionSeconds() {
+      return int("VOICE_MAX_SESSION_SECONDS", 300);
+    },
+    get maxSpendCents() {
+      return int("VOICE_MAX_SPEND_CENTS", 50);
+    },
+  },
   get databaseUrl() {
     return optional("DATABASE_URL");
   },
@@ -72,3 +103,11 @@ export function requireOrthogonalKey(): string {
 }
 
 export const hasDatabase = () => Boolean(env.databaseUrl);
+
+/**
+ * Voice mode availability. The default "orthogonal" provider only needs the
+ * Orthogonal key (already required by the app), so voice works out of the box;
+ * the "xai" provider needs XAI_API_KEY.
+ */
+export const hasVoice = () =>
+  env.voice.provider === "xai" ? Boolean(env.voice.apiKey) : Boolean(env.orthogonal.apiKey);

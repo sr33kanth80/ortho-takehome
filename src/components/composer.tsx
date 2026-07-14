@@ -7,19 +7,22 @@ interface Props {
   streaming: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** Taller resting height for the landing hero. */
+  large?: boolean;
 }
 
-export function Composer({ disabled, streaming, onSend, onStop }: Props) {
+export function Composer({ disabled, streaming, onSend, onStop, large = false }: Props) {
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  // autosize
+  // autosize — grows with content up to a ceiling. The taller resting height
+  // for `large` mode is enforced via CSS min-height, not here.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [value]);
+    el.style.height = `${Math.min(el.scrollHeight, large ? 260 : 200)}px`;
+  }, [large, value]);
 
   const submit = () => {
     const text = value.trim();
@@ -30,7 +33,7 @@ export function Composer({ disabled, streaming, onSend, onStop }: Props) {
 
   return (
     <div
-      className="relative rounded-[12px] border border-[var(--border)] bg-[var(--bg)] transition-shadow focus-within:shadow-[0_0_0_3px_rgba(1,106,113,0.18)]"
+      className="relative rounded-[12px] border border-[var(--border)] bg-[var(--bg)] transition-shadow focus-within:shadow-[0_0_0_3px_rgba(3,152,97,0.18)]"
     >
       <textarea
         ref={ref}
@@ -44,6 +47,7 @@ export function Composer({ disabled, streaming, onSend, onStop }: Props) {
         }}
         rows={1}
         placeholder="Ask about a company, a person, or anything on the web…"
+        style={large ? { minHeight: 96 } : undefined}
         className="w-full resize-none bg-transparent px-4 py-4 pr-14 text-[16px] leading-[1.5] text-[var(--ink)] outline-none placeholder:text-[var(--ink-dim)]"
       />
       <div className="absolute bottom-2.5 right-2.5">

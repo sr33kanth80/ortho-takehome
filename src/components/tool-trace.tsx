@@ -59,10 +59,22 @@ export function ToolTrace({ part }: { part: ToolUIPart }) {
         onClick={() => setOpen((v) => !v)}
         className="group flex w-full items-center gap-2.5 rounded-[12px] border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)]"
       >
-        {/* status glyph — monochrome per the flat, single-accent rule */}
+        {/* status glyph — spinning brand mark while running, then check / cross */}
         <span className="flex h-4 w-4 shrink-0 items-center justify-center">
           {running ? (
-            <span className="h-2 w-2 animate-spin rounded-[2px] border border-[var(--ink-dim)] border-t-transparent" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden
+              className="animate-spin"
+            >
+              <path
+                d="M12 1 Q13 11 23 12 Q13 13 12 23 Q11 13 1 12 Q11 11 12 1 Z"
+                fill="var(--color-forest-ink)"
+              />
+            </svg>
           ) : failed ? (
             <span className="text-[13px] leading-none text-[var(--err)]">✕</span>
           ) : (

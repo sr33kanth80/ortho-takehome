@@ -1,240 +1,564 @@
 # Meridian
 
-An AI chat application that answers questions with live data from [Orthogonal](https://orthogonal.com)'s API catalog: company profiles, people and contact lookups, web and news search, and any other endpoint in the catalog the model decides it needs.
+Meridian is a web-based AI research assistant that answers questions with live data through [Orthogonal](https://orthogonal.com). It combines conversational research, visible tool execution, per-call cost reporting, reusable research recipes, persistent history, and optional push-to-talk voice in one interface.
 
-**Live demo:** _(deployed URL here)_
+**Last updated:** July 13, 2026
+
+The application exposes this exact file at `/readme`. The global **README** button in the top-right corner of every page opens that route, so the repository document and evaluator-facing document have one source of truth.
 
 ## Architecture
 
 ### The problem, in my own words
 
-Build a chat assistant that doesn't just talk, but goes and gets real data. Orthogonal is the data layer: it's a pay-per-call proxy over a catalog of third-party APIs (Serper, ContactOut, Company Enrich, Tomba, and roughly 190 endpoints total at the time of writing). The assistant should decide when a question needs live data, pick the right endpoint, call it, and ground its answer in what came back.
+The challenge is not merely to place a chat box in front of an LLM. The assistant must recognize when a question requires current external evidence, select an appropriate data source, call it safely through Orthogonal, and explain the result without hiding cost or provenance.
 
-Two properties of Orthogonal shaped everything else:
+Orthogonal behaves like a tool router over a changing catalog of third-party APIs. It provides primitives for semantic catalog search, endpoint inspection, and paid execution. That creates two central engineering constraints:
 
-1. **It's a catalog, not a fixed API.** There is no single "company endpoint." There's a search API (`/v1/search`) that finds endpoints semantically, a details API (`/v1/details`) that returns an endpoint's parameter schema, and a run API (`/v1/run`) that executes any of them. The catalog contents can change without notice.
-2. **Every `run` call costs real money.** Prices range from $0.002 (a Serper search) to $0.55 (a ContactOut person enrichment). An LLM that calls tools in a loop can burn through credit fast if nothing stops it.
+1. **The tool surface is dynamic.** Hardcoding a few endpoints would produce a reliable demo but would not demonstrate access to the wider Orthogonal catalog.
+2. **Calls have real monetary cost.** An autonomous model can retry, chain tools, or choose an unnecessarily expensive endpoint. Cost control must be enforced in code rather than entrusted to a prompt.
 
-Assumptions I made:
+The product therefore uses a hybrid agent: curated tools handle common research reliably, while catalog-discovery tools let the model reach long-tail capabilities at runtime.
 
-- Users are anonymous. There's no login. In production you'd gate this behind auth, since every message spends the operator's Orthogonal credit (see Limitations).
-- One shared Orthogonal key, held server-side. Users never see or supply keys.
-- Conversation history is worth persisting, but the app should still function without a database (it degrades to ephemeral chats).
-- The response shapes documented at docs.orthogonal.com are not fully accurate. I verified everything against the live API before writing types; where they disagreed (the `/v1/details` response shape, the price field type), the live API won.
+### Assumptions
+
+- The application currently serves anonymous users. There is no authentication or tenant boundary.
+- A single server-side Orthogonal API key funds inference, data tools, and the default voice pipeline. The key is never sent to the browser.
+- Postgres is optional during evaluation. Without `DATABASE_URL`, the application uses a process-local in-memory conversation store so the complete interface remains usable.
+- Recipes are transparent prompt templates and research methods, not a separate autonomous runtime. Starting a recipe hands its instructions to the same Meridian agent and cost controls used by ordinary chat.
+- Voice is another interface to the same agent, not a separate product or tool implementation.
+- Live API responses are the source of truth when they differ from documentation. Probe scripts were used to validate Orthogonal response shapes and endpoint prices.
+- The current scope prioritizes the Orthogonal integration, agent behavior, cost visibility, resilience, and evaluator experience over commodity authentication work.
 
 ### Functional requirements
 
-- A user can send a message and watch the assistant's answer stream in token by token.
-- The assistant calls Orthogonal endpoints when a question needs live data, and can chain calls (e.g. web-search for a domain, then enrich it).
-- The assistant can discover and execute catalog endpoints that have no purpose-built tool, via search → details → run.
-- Every tool call is visible in the UI: which endpoint ran, with what input, what it returned, and what it cost in cents.
-- Conversations persist across page reloads. Users can revisit, resume, and delete them.
-- Failures (rate limits, insufficient credits, upstream 5xx, timeouts) surface as readable messages, and the model gets a chance to recover before the user sees an error.
+- Users can send text messages and receive AI responses grounded in live Orthogonal data.
+- The agent can chain multiple tools in one turn.
+- Common company, contact, web, and news tasks use curated, validated tools.
+- Unusual requests can search the Orthogonal catalog, inspect an endpoint schema, and execute the selected endpoint.
+- Tool inputs, outputs, failures, and attributed costs are visible in the conversation trace.
+- A persistent animated `Cooking` status remains visible for the entire agent turn, including pauses between multiple tool calls and final answer synthesis.
+- Conversation history can be listed, reopened, resumed, and deleted.
+- An in-flight conversation continues when a user switches to another conversation and returns.
+- The app remains functional without Postgres by using ephemeral process memory.
+- Users can speak to Meridian through a push-to-talk voice interface backed by the same research agent.
+- The landing page includes categorized prompt suggestions and a horizontally scrollable Cookbook of reusable recipes.
+- The Use Cases page presents every recipe and opens its full details in an accessible overlay without navigating away.
+- Privacy Policy, Terms of Use, Use Cases, and README pages share the stationary application sidebar.
+- A compact footer exposes Use Cases, Privacy, and Terms links on the landing page.
+- A global README button opens the current repository README from every page.
 
 ### Non-functional requirements
 
-- **Cost safety.** A single chat turn cannot spend more than a configured cap (default 50¢), no matter what the model decides to do. Identical paid calls within a 10-minute window are served from cache instead of re-charged.
-- **Latency.** First token should stream within a few seconds. Catalog metadata lookups (search, details) are cached in memory so repeat questions skip the round trips.
-- **Resilience.** Orthogonal errors are classified and normalized; a tool failure never kills the stream. Persistence failures never block a response.
-- **Portability.** The LLM provider is a config value (`LLM_PROVIDER=orthogonal|anthropic|openai`), not an import. The default needs no additional key: inference runs through Orthogonal's own catalog.
-- **Type safety end to end.** TypeScript strict mode; the Orthogonal client types were validated against live responses, not the docs.
+- **Cost safety:** every chat turn has a server-enforced paid-tool budget, defaulting to 50 cents. Voice has independent session duration and spend caps.
+- **Transparency:** the UI shows which tools ran and the cost attributed to each assistant turn.
+- **Resilience:** malformed input is rejected, upstream failures are normalized, tool errors are returned to the model as data, and persistence failures do not break a response stream.
+- **Performance:** catalog searches and schemas are cached; identical successful paid calls are deduplicated for ten minutes on the current server instance.
+- **Portability:** model selection is controlled by environment variables. Orthogonal, Anthropic, and OpenAI providers share the same AI SDK interface.
+- **Security:** secrets stay server-side, paid calls pass through a budget gate, tool outputs are length-bounded, and Orthogonal requests have a 30-second timeout.
+- **Accessibility:** interactive cards are keyboard controls; recipe dialogs support Escape, backdrop dismissal, focus containment, and focus restoration.
+- **Type safety:** the application uses strict TypeScript, Zod tool schemas, typed Orthogonal responses, and AI SDK message validation.
+- **Graceful degradation:** missing optional database or voice configuration does not prevent text research from working.
 
-### System diagram
+### System design diagram
 
+```text
++----------------------------- BROWSER -----------------------------+
+| Meridian UI: chat, history, tool trace, recipes, voice, and docs |
++-------------------------------+-----------------------------------+
+                                |
+              +-----------------+-----------------+
+              |                 |                 |
+              v                 v                 v
+        POST /api/chat     History APIs       Voice APIs
+              |                 |                 |
++-------------+-----------------+-----------------+-----------------+
+|                         NEXT.JS SERVER                            |
+|                                                                  |
+|  AI SDK agent ------> Model provider ------> Orthogonal API      |
+|       |                                      (AI + STT/TTS)       |
+|       v                                                          |
+|  Hybrid tools --> Spend gate --> Orthogonal client               |
+|                                      |                            |
+|                                      +--> API catalog             |
+|                                      +--> TTL cache               |
+|                                                                  |
+|  Conversation store --------------------> Postgres or memory      |
+|  /readme -------------------------------> README.md               |
++------------------------------------------------------------------+
 ```
-                                   ┌──────────────────────────────────────────┐
-                                   │                Browser                   │
-                                   │                                          │
-                                   │  Next.js React UI (useChat)              │
-                                   │  · streaming messages                    │
-                                   │  · tool trace log w/ cost badges         │
-                                   │  · conversation sidebar                  │
-                                   └───────┬───────────────────▲──────────────┘
-                                           │ POST /api/chat    │ SSE stream
-                                           │ (UIMessages)      │ (tokens + tool events)
-┌──────────────────────────────────────────▼───────────────────┴──────────────┐
-│                        Next.js server (Vercel)                              │
-│                                                                             │
-│  /api/chat ──► agent loop (AI SDK streamText, max 8 steps)                  │
-│                   │                                                         │
-│                   │ tool calls                    ┌──────────────────────┐  │
-│                   ▼                               │  LLM provider        │  │
-│  ┌─────────────────────────────────┐  prompts +   │  default: GLM-5.2    │  │
-│  │ Tool layer                      │  tool defs   │  via Orthogonal /run │  │
-│  │                                 │◄────────────►│  (or Anthropic/      │  │
-│  │                                 │              │  OpenAI via env)     │  │
-│  │                                 │              └──────────────────────┘  │
-│  │ curated:                        │                                        │
-│  │  · enrich_company               │              ┌──────────────────────┐  │
-│  │  · find_contact_by_linkedin    ─┼──────────────►  SpendTracker        │  │
-│  │  · enrich_person                │  budget gate │  (per-turn ¢ cap)    │  │
-│  │  · web_search / news_search     │              └──────────────────────┘  │
-│  │ dynamic:                        │                                        │
-│  │  · discover_apis (free)         │                                        │
-│  │  · get_api_details (free)       │                                        │
-│  │  · run_api (paid)               │                                        │
-│  └───────────────┬─────────────────┘                                        │
-│                  ▼                                                          │
-│  ┌─────────────────────────────────┐         ┌──────────────────────────┐   │
-│  │ Orthogonal client               │         │ TTL cache (in-memory)    │   │
-│  │ · typed search/details/run      │◄───────►│ · details: 1h            │   │
-│  │ · error normalization           │         │ · search: 5m             │   │
-│  │ · timeout + retryability flags  │         │ · run dedupe: 10m        │   │
-│  └───────────────┬─────────────────┘         └──────────────────────────┘   │
-│                  │                                                          │
-│  /api/conversations[,/:id] ──► conversation store (Drizzle)                 │
-│                  │                       │                                  │
-└──────────────────┼───────────────────────┼──────────────────────────────────┘
-                   │ HTTPS Bearer          │ SQL
-                   ▼                       ▼
-      ┌────────────────────────┐   ┌──────────────────┐
-      │ Orthogonal API         │   │ Postgres (Neon)  │
-      │ /v1/search             │   │ · conversations  │
-      │ /v1/details            │   │ · messages       │
-      │ /v1/list-endpoints     │   │   (parts JSONB)  │
-      │ /v1/run ── $ per call ─┼─► └──────────────────┘
-      └───────┬────────────────┘
-              ▼
-      ~190 third-party endpoints
-      (Serper, ContactOut, Company
-       Enrich, Tomba, Olostep, …)
-```
+
+### Runtime request flow
+
+1. The browser sends the visible `UIMessage[]` history and a client-generated conversation ID to `POST /api/chat`.
+2. The server validates and caps history at the latest 40 messages.
+3. A new `SpendTracker` and toolset are created for the turn.
+4. The AI SDK runs the selected model for at most `MAX_AGENT_STEPS` steps.
+5. Curated or dynamically discovered tools call Orthogonal through the typed client.
+6. Paid calls pass through the budget check. Successful identical calls may be served from the TTL cache.
+7. Text and tool events stream to the browser through the AI SDK UI-message protocol.
+8. Final cost metadata is attached to the assistant message.
+9. The trailing user and assistant messages are saved to Postgres or the in-memory fallback. Persistence is best-effort and cannot terminate the user-facing response.
+
+### Major components
+
+| Component | Responsibility |
+| --- | --- |
+| `src/components/app.tsx` | Conversation lifecycle, persistent per-conversation chat instances, landing experience, streaming UI orchestration |
+| `src/app/api/chat/route.ts` | Input validation, agent execution, streaming response metadata, persistence |
+| `src/lib/llm.ts` | Provider-neutral model selection and Orthogonal-routed inference |
+| `src/lib/tools/index.ts` | Curated tools, dynamic catalog tools, structured tool failures |
+| `src/lib/tools/spend.ts` | Server-side per-turn and per-session spend accounting |
+| `src/lib/orthogonal/client.ts` | Authenticated Orthogonal search, details, list, and run requests; cache and error normalization |
+| `src/lib/db/store.ts` | Postgres-backed history with an in-memory fallback |
+| `src/lib/voice/*` | Voice sessions, transient recordings, Orthogonal STT/TTS, and realtime-tool bridge |
+| `src/lib/recipes.ts` | Shared recipe definitions used by the landing Cookbook and Use Cases overlays |
+| `src/app/readme/page.tsx` | Reads and renders this exact `README.md` inside the application |
 
 ### API specification
 
-The app exposes four endpoints. Everything else is internal.
+All application endpoints are same-origin Next.js route handlers. There is currently no authentication layer.
 
-`POST /api/chat`
+#### `POST /api/chat`
 
-Runs one assistant turn. Body:
+Runs one assistant turn.
+
+Request body:
 
 ```json
 {
-  "id": "conversation-nanoid",
-  "messages": [ /* AI SDK UIMessage[], the full visible history */ ]
+  "id": "client-generated-conversation-id",
+  "messages": [
+    {
+      "id": "message-id",
+      "role": "user",
+      "parts": [{ "type": "text", "text": "Profile stripe.com" }]
+    }
+  ]
 }
 ```
 
-Returns an SSE stream of UI message chunks: text deltas, tool-call inputs as they're generated, tool outputs as they resolve, and a finish event carrying `{ costCents, charges[] }` metadata for the turn. Errors before streaming starts return `400` (malformed body) or `500` with `{ error }`.
+The server requires a non-empty `messages` array, validates it with the AI SDK, and uses only the latest 40 messages. Invalid JSON or malformed messages return `400` with `{ "error": string }`.
 
-`GET /api/conversations`
-
-```json
-{ "conversations": [{ "id", "title", "updatedAt" }], "persistent": true }
-```
-
-`persistent: false` means no database is configured; the client shows an "ephemeral mode" notice.
-
-`GET /api/conversations/:id`
+Success returns an AI SDK UI-message event stream containing text deltas, tool-call states, tool results, and final message metadata:
 
 ```json
-{ "id": "…", "messages": [ /* UIMessage[] with costCents metadata */ ] }
+{
+  "costCents": 2,
+  "charges": [{ "api": "company-enrich", "path": "/companies/enrich", "cents": 2 }]
+}
 ```
 
-`DELETE /api/conversations/:id`
+#### `GET /api/conversations`
+
+Returns the newest 50 conversation summaries.
 
 ```json
-{ "ok": true }
+{
+  "conversations": [
+    { "id": "abc", "title": "Profile stripe.com", "updatedAt": "2026-07-13T12:00:00.000Z" }
+  ],
+  "persistent": true
+}
 ```
+
+`persistent` is `false` when `DATABASE_URL` is absent and process memory is being used.
+
+#### `GET /api/conversations/:id`
+
+Returns `{ "id": string, "messages": UIMessage[] }`. Stored cost metadata is restored onto assistant messages.
+
+#### `DELETE /api/conversations/:id`
+
+Deletes the conversation and its messages. Returns `{ "ok": true }`. Postgres uses cascade deletion for messages.
+
+#### `GET /api/voice/session`
+
+Capability probe returning `{ "configured": boolean, "provider": "orthogonal" | "xai" }`.
+
+#### `POST /api/voice/session`
+
+Creates an opaque voice session with server-side history and a session-level spend tracker.
+
+The default Orthogonal response contains:
+
+```json
+{
+  "configured": true,
+  "provider": "orthogonal",
+  "sessionId": "opaque-id",
+  "caps": { "maxSessionSeconds": 300, "maxSpendCents": 50 }
+}
+```
+
+When `VOICE_PROVIDER=xai`, the response also contains an ephemeral realtime token, model, voice, instructions, and tool definitions.
+
+#### `POST /api/voice/turn`
+
+Accepts `multipart/form-data` with:
+
+- `sessionId`: an active voice-session ID.
+- `audio`: a browser recording.
+
+The route temporarily hosts the clip, transcribes it through Orthogonal, runs the shared agent and tools, synthesizes the answer, and returns:
+
+```json
+{
+  "transcript": "What changed at Anthropic this week?",
+  "text": "...",
+  "audioBase64": "...",
+  "mime": "audio/mpeg",
+  "tools": ["news_search"],
+  "turnCents": 2,
+  "totalCents": 4,
+  "remainingCents": 46
+}
+```
+
+#### `POST /api/voice/tool`
+
+Executes a tool call for the optional xAI realtime client.
+
+```json
+{
+  "sessionId": "opaque-id",
+  "name": "web_search",
+  "arguments": { "q": "Orthogonal API" }
+}
+```
+
+The call uses the same validated tool layer and session `SpendTracker` as text chat.
+
+#### `GET /api/voice/audio/:id`
+
+Serves a short-lived, non-cacheable recording to the speech-to-text provider. The unguessable entry is stored in memory, expires after 90 seconds, and is deleted after transcription. Missing or expired IDs return `404`.
 
 ### Core entities and data model
 
-Two tables.
+#### Durable relational entities
 
-```
-conversations                      messages
-┌────────────────────┐            ┌─────────────────────────────┐
-│ id          text PK│◄───────────│ conversation_id  text FK    │
-│ title       text   │  1 : many  │ id               text PK    │
-│ created_at  tstz   │            │ role             text       │
-│ updated_at  tstz   │            │ parts            jsonb      │
-└────────────────────┘            │ cost_cents       int        │
-                                  │ created_at       tstz       │
-                                  └─────────────────────────────┘
-                                  index (conversation_id, created_at)
+```text
+conversations
+  id            text primary key
+  title         text not null
+  created_at    timestamptz not null
+  updated_at    timestamptz not null
+
+messages
+  id               text primary key
+  conversation_id  text foreign key -> conversations.id on delete cascade
+  role             text: user | assistant | system
+  parts            jsonb not null
+  cost_cents       integer not null default 0
+  created_at       timestamptz not null
+
+index: messages(conversation_id, created_at)
+relationship: conversations 1 -> many messages
 ```
 
-The interesting decision is `parts jsonb`. A message is not just text: it's an ordered sequence of text chunks and tool invocations (input, output, state, cost). I store the AI SDK's `UIMessage.parts` array verbatim. Replaying a conversation renders identical to the live stream, including the tool trace, with zero reassembly logic. The alternative (normalized `tool_calls` tables joined back into messages) buys queryability I don't need yet and costs a reconstruction layer that has to track the AI SDK's part format anyway. `cost_cents` is denormalized onto the message row because "what did this turn cost" is the one aggregation I actually want.
+`messages.parts` stores the AI SDK `UIMessage.parts` array verbatim. A message can contain ordered text, tool inputs, tool outputs, states, and metadata. JSONB preserves replay fidelity without introducing a brittle set of normalized tool-call tables. `cost_cents` is denormalized because per-turn cost is displayed frequently.
+
+#### Process-local entities
+
+- **In-memory conversations:** mirror the relational model when Postgres is absent and are stored on `globalThis` so development hot reloads do not erase them.
+- **Cache entries:** `{ value, expiresAt }`, bounded to 500 entries by an LRU-like `Map` policy.
+- **Voice sessions:** opaque ID, text history, creation time, and a session `SpendTracker`.
+- **Transient audio:** unguessable ID, bytes, MIME type, and expiration time.
+- **Recipes:** static typed definitions containing slug, title, category, description, input, output, tools, method, cost safeguard, and agent prompt.
 
 ### Database choice
 
-Postgres, via Drizzle ORM, hosted on Neon.
+The durable store is PostgreSQL through Drizzle ORM and the `postgres` driver. Neon is the intended managed deployment option, although any compatible Postgres connection string works.
 
-- Chat history is relational in the small (conversations → messages) with one awkward, schema-fluid bit (message parts). Postgres handles both: real foreign keys with cascade delete, plus JSONB for the parts.
-- Serverless-friendly: Neon speaks the plain Postgres protocol over a connection pooler, which works from Vercel functions without a driver rewrite.
-- Drizzle because the schema is two tables and I wanted migrations plus types without an ORM runtime footprint.
+Why Postgres:
 
-The app also runs with no database at all. Every store function no-ops when `DATABASE_URL` is unset, and the UI tells the user history won't survive a refresh. That's deliberate: reviewers can `npm run dev` with two env vars and get the full chat experience.
+- Conversation-to-message ownership is naturally relational.
+- Foreign keys and cascade deletion prevent orphaned history.
+- JSONB handles schema-fluid AI SDK message parts without sacrificing relational integrity around conversations.
+- Postgres is operationally familiar and supported by serverless providers.
+- The schema is small enough that a specialized document database would add operational surface without a material benefit.
+
+Why Drizzle:
+
+- The schema remains visible as TypeScript rather than hidden behind generated models.
+- It provides typed queries and migrations with little runtime abstraction.
+- It works cleanly with the serverless-friendly `postgres` driver.
+
+Why an in-memory fallback:
+
+- A reviewer can run the complete interaction with only an Orthogonal key.
+- Missing database configuration does not silently disable history controls.
+- The UI clearly labels ephemeral mode.
+- The tradeoff is explicit: process-local history is not durable or shared across instances.
 
 ### Additional infrastructure
 
-- **In-memory TTL cache** (bounded, LRU-ish) in front of Orthogonal. Three jobs: catalog search results (5 min), endpoint schemas (1 h, they're effectively static), and paid `run` de-duplication (10 min). The last one is a cost control, not a performance optimization: an agent that retries or a user who re-asks doesn't get double-charged. On serverless this cache is per-instance, which weakens but doesn't break it; see Limitations.
-- **Per-turn spend tracker.** A `SpendTracker` instance is created per request and closed over by every tool. Paid calls check the remaining budget before executing; when it's exhausted the tool returns a structured "budget exceeded" result that instructs the model to stop calling paid tools and answer with what it has.
-- Things I considered and left out: a queue (no long-running jobs exist; a chat turn is one request), Redis (the cache abstraction is an interface, so swapping the Map for Redis is a small change when multi-instance dedupe starts to matter), and rate limiting middleware (needed before real launch, see Limitations).
+#### Bounded TTL cache
 
-## Design decisions
+The Orthogonal client uses a process-local cache with resource-specific TTLs:
 
-**Hybrid toolset: curated tools plus dynamic discovery.** This is the biggest one. I gave the model five curated tools mapped to specific catalog endpoints I tested by hand (company enrichment, two contact lookups, web search, news search), and three meta-tools that expose Orthogonal's own primitives (`discover_apis`, `get_api_details`, `run_api`). Curated-only would be reliable but caps the app at whatever I picked; the brief explicitly says "and any other available APIs". Discovery-only would be maximally general but slow (every question starts with catalog search) and fragile (the model composes calls to endpoints nobody tested). The hybrid gets predictable behavior on the common cases and a documented escape hatch for the long tail. The system prompt tells the model to prefer curated tools and to always fetch an endpoint's schema before running it dynamically.
+| Resource | TTL | Reason |
+| --- | ---: | --- |
+| Catalog search | 5 minutes | Avoid repeated semantic search while allowing catalog changes |
+| Endpoint details | 1 hour | Schemas and prices change infrequently |
+| Endpoint list | 10 minutes | Stable catalog navigation data |
+| Successful paid run | 10 minutes | Prevent duplicate charges for identical requests |
 
-**Verify the API before typing it.** I wrote a smoke script (`scripts/smoke.ts`) and a probe script (`scripts/probe.ts`) and ran them against the live API before writing the tool layer. This caught real divergences from the docs: `/v1/details` returns `pathParams`/`queryParams`/`bodyParams` rather than the documented flat `parameters` array, prices come back as numbers not strings, and `/v1/balance` 404s despite being documented. The curated tools' estimated prices in the code are the live values from those probes.
+This improves latency and cost behavior on one warm instance. Redis would be the production replacement for cross-instance consistency.
 
-**Tool errors are data, not exceptions.** Tools never throw. Every failure returns `{ ok: false, error: "..." }` with a normalized code and a retryability hint. A thrown error inside a tool would abort the whole stream and the user would get a broken turn; a structured error gives the model one more step to try an alternative endpoint or explain the failure. The error taxonomy (AUTH, RATE_LIMITED, INSUFFICIENT_CREDITS, UPSTREAM, TIMEOUT, BUDGET_EXCEEDED, …) is shared between the client and the tools.
+#### Spend trackers
 
-**One key end to end: the LLM itself runs through Orthogonal.** While probing the catalog I noticed it contains OpenAI-compatible chat-completion endpoints (Baseten, Z.ai, Perplexity). I verified that Baseten's `/v1/chat/completions` via `/v1/run` supports the `tools` array and that `zai-org/GLM-5.2` emits well-formed `tool_calls`, at roughly 0.1¢ per call. So the default deployment needs exactly one secret: the Orthogonal key pays for both the reasoning and the data. Implementation: the AI SDK's OpenAI provider with a custom `fetch` that rewraps each request into the `/v1/run` envelope and unwraps the response, composed with `simulateStreamingMiddleware` because `/v1/run` returns a single JSON body. The tradeoff is real: no true token-by-token streaming on this provider; text arrives per agent step. Direct Anthropic or OpenAI keys restore token streaming with one env change, and I kept those paths tested and first-class. I chose the single-key default anyway because it demonstrates the deepest possible use of the platform being evaluated, and it removes a signup barrier for anyone running the repo.
+A new server-side `SpendTracker` is created per chat turn. Every paid tool checks the remaining budget before execution and records the actual or estimated charge afterward. Voice sessions have a longer-lived tracker with their own duration and spend caps.
 
-**Vercel AI SDK over a hand-rolled agent loop.** I considered writing the tool-calling loop directly against the Anthropic API. The AI SDK won on three counts: the multi-step loop with `stopWhen` is exactly the agent shape I needed, the UIMessage stream protocol carries tool inputs/outputs to the client incrementally (which is what makes the live tool trace possible without inventing a wire format), and provider abstraction came free, which the "provider-agnostic" requirement made non-optional. The cost is a framework dependency whose part-type unions occasionally fight you in TypeScript.
+#### Voice session and audio stores
 
-**Budget enforcement lives server-side, per turn.** The cap is not in the prompt (models don't reliably obey numeric constraints) and not in the client (trivially bypassed). It's a counter in the request handler that every paid tool consults. Prompt guidance exists too, but as an optimization (the model economizes voluntarily), not as the safety mechanism.
+Voice state and temporary recordings are process-local. Audio exists only long enough for the remote speech-to-text provider to fetch it. Production multi-instance voice would use shared session storage and object storage with signed, short-lived URLs.
 
-**Costs are a first-class UI element.** Each tool call renders as a trace row with a cent badge; each assistant message shows its total turn cost. Partly honesty (this app spends real money and users should see it), partly because it made my own debugging faster: you can watch the model choose a 55¢ enrichment when a 3¢ lookup would do, and then go fix the prompt.
+#### Infrastructure intentionally omitted
+
+- **Queue/background worker:** chat and voice turns are synchronous request/response workflows; no current task needs deferred processing.
+- **Redis:** avoided for take-home simplicity, but the cache and session boundaries are clear replacement points.
+- **Search/vector database:** the product retrieves live structured and web data; it does not maintain a private document corpus.
+
+## Design Decisions
+
+### Hybrid curated and dynamic tools
+
+Five curated tools cover the most common tasks:
+
+- `enrich_company`
+- `find_contact_by_linkedin`
+- `enrich_person`
+- `web_search`
+- `news_search`
+
+Three meta-tools expose the wider Orthogonal catalog:
+
+- `discover_apis`
+- `get_api_details`
+- `run_api`
+
+Curated-only was rejected because it would cap the product at endpoints selected during development. Discovery-only was rejected because every common request would require extra catalog steps and would depend on untested schemas. The hybrid gives the common path tight validation while preserving generality.
+
+### One-key default architecture
+
+The default LLM is `zai-org/GLM-5.2`, called through Baseten's OpenAI-compatible endpoint inside Orthogonal `/v1/run`. The same `ORTHOGONAL_API_KEY` therefore pays for reasoning, research tools, speech-to-text, and text-to-speech.
+
+Alternative providers remain first-class:
+
+- `LLM_PROVIDER=anthropic` with `ANTHROPIC_API_KEY`.
+- `LLM_PROVIDER=openai` with `OPENAI_API_KEY`.
+
+The provider adapter means the rest of the agent is unchanged. The single-key default demonstrates the Orthogonal platform deeply and makes evaluation setup smaller.
+
+### Vercel AI SDK instead of a custom agent loop
+
+The AI SDK provides multi-step tool calling, provider abstraction, validated UI messages, and a streaming protocol that carries tool state alongside text. A hand-built loop would offer more control but would require inventing and maintaining the same state machine and browser wire format.
+
+### Server-enforced budgets
+
+Budget instructions exist in the system prompt, but the enforcement mechanism is a server-side counter closed over by every paid tool. Client-side limits are bypassable, and prompt-only numeric limits are unreliable.
+
+### Structured tool failures
+
+Tools return normalized `{ ok: false, error }` results rather than throwing. A thrown tool exception can abort the entire stream. A structured failure lets the agent try one sensible alternative or explain the failure with the partial evidence already gathered.
+
+### Visible cost and process trace
+
+Each tool invocation is rendered as part of the assistant message, and the completed turn carries cost metadata. This is both a customer trust feature and an engineering diagnostic: expensive or redundant tool choices are visible immediately.
+
+### Persistent chat objects per conversation
+
+The browser keeps one AI SDK `Chat` instance per conversation in a session-scoped map. Switching conversations therefore does not abort an in-flight response. Returning to the conversation re-subscribes to the same stream.
+
+### Recipes as shared typed data
+
+Recipe definitions live in `src/lib/recipes.ts` and power both the landing Cookbook and Use Cases overlays. This prevents the marketing description, tool list, safeguards, and executable prompt from drifting across surfaces. A recipe is inspectable before it becomes an agent instruction.
+
+### README as a product surface
+
+`/readme` reads `README.md` on the server and renders it inside the same application shell. A separate CMS page was rejected because it would create two documents that could diverge. The repository file remains authoritative.
+
+### Voice reuses the text agent
+
+The default voice flow is browser recording -> Orthogonal speech-to-text -> existing model and tools -> Orthogonal text-to-speech. Reusing the agent preserves tool schemas, failure handling, budget enforcement, and answer behavior across text and voice.
 
 ## Tradeoffs
 
-- **No auth, by choice.** The brief says "assume real customers" and a real deployment would need user accounts and per-user budgets. I spent that time on cost controls and error handling instead, because those are the parts specific to this problem; auth is commodity work (NextAuth or Clerk drop in) that would have displaced the interesting engineering.
-- **In-memory cache instead of Redis.** Correct behavior on a single warm instance, weaker guarantees across cold starts and concurrent instances. The `CacheStore` interface exists so the swap is contained. For a take-home deployment on one Vercel region, the Map wins on simplicity per unit of benefit.
-- **Last-2-messages persistence per turn.** The chat route persists the user message and assistant response after each turn rather than diffing the full history. Simple and correct for the append-only flow the UI generates; it would miss edits or regenerations of older messages if those features were added.
-- **Trimmed tool outputs.** Upstream responses get truncated at 12 kB before reaching the model. Saves tokens and keeps latency down, at the cost of occasionally cutting off a long result. The full response is still visible in the UI trace (up to its own display cap).
-- **No streaming of intermediate model "thinking".** Reasoning parts are dropped in the UI. Cleaner for end users, less transparency for the curious.
-- **Simulated streaming on the default provider.** Orthogonal's `/v1/run` cannot stream, so with `LLM_PROVIDER=orthogonal` each agent step's text arrives as a block rather than token by token. Tool trace events still appear live between steps, which preserves most of the perceived responsiveness. Direct Anthropic/OpenAI keys restore true streaming.
-- **Two tables, no users table.** The data model matches what the app does today rather than speculating about multi-tenancy. Adding `user_id` to conversations is a one-line migration when auth arrives.
+- **No authentication:** more time went into Orthogonal integration, tool safety, and observable behavior. The consequence is that the shared API key cannot safely fund public anonymous traffic.
+- **Process-local cache:** zero additional service is required, but deduplication and catalog caching are not coordinated across server instances.
+- **Optional in-memory history:** excellent evaluator setup and local usability, but history disappears on restart and is not shared across instances.
+- **Last-two-message persistence:** simple for the append-only interface, but it would not correctly model arbitrary edits to older messages.
+- **40-message history cap:** bounds model context and cost, but long conversations lose early context without summarization.
+- **12,000-character tool-result cap:** prevents oversized model inputs, but a very large upstream response may be truncated.
+- **Simulated streaming on the default provider:** Orthogonal `/v1/run` returns a complete JSON response, so the default model streams at agent-step granularity. Direct Anthropic or OpenAI restores token streaming.
+- **Inference cost is not in the displayed tool ledger:** visible and enforced spend covers data tools; default Orthogonal model calls are a separate unreported cost.
+- **Static recipes:** transparent, version-controlled, and easy to audit, but adding a recipe currently requires a code change and deployment.
+- **Push-to-talk voice:** reuses the agent and is straightforward to reason about, but has more latency and less conversational fluidity than a persistent realtime audio session.
+- **Full tool outputs in message JSONB:** perfect replay fidelity, but limited queryability for analytics without extracting JSON fields.
+- **Editorial desktop-first shell:** the stationary 260px sidebar creates a strong application identity, but the current narrow-screen experience needs more responsive navigation work.
 
 ## Limitations
 
-If this deployed to production today, these are the things I'd worry about, in order:
+If this application were deployed to production today, the primary concerns would be:
 
-1. **Anyone can spend my Orthogonal credit.** No auth plus a shared server-side key means the per-turn cap is the only thing between a scripted abuser and my balance. Fix: auth, per-user budgets, and a global daily cap enforced in the database rather than in process memory.
-2. **No rate limiting.** A loop hitting `/api/chat` burns LLM tokens and Orthogonal credit in parallel. Needs IP-based limits at the edge before anything else.
-3. **Cache and budget state are per-instance.** Two concurrent serverless instances each allow a full budget and neither sees the other's dedupe cache. Low blast radius at take-home traffic, real money at scale. Redis (or Postgres advisory state) fixes both.
-4. **Dynamic `run_api` trusts catalog metadata.** The model composes parameters from `/v1/details` schemas. A catalog endpoint with a wrong or malicious schema description could induce bad calls. Payloads only ever go to Orthogonal's own host, which bounds the damage, but input validation is only as good as the catalog's metadata.
-5. **No observability.** Errors go to `console.error`. Production needs structured logs, cost dashboards per conversation/day, and alerts on spend velocity and error rates.
-6. **Conversations are unbounded.** History is capped at 40 messages per request, but there's no summarization, so long conversations lose early context silently.
+1. **Anonymous users can spend the shared Orthogonal balance.** There is no authentication, account ownership, per-user quota, or global daily circuit breaker.
+2. **There is no rate limiter.** Parallel requests can each receive a fresh per-turn budget.
+3. **Spend and deduplication are instance-local.** Separate serverless instances do not share their `SpendTracker` or cache state.
+4. **Inference spend is missing from the ledger.** The UI reports data-tool charges, not total Orthogonal spend including model calls.
+5. **Voice storage is single-instance.** A speech provider can fail to retrieve an in-memory clip if a request is routed to another instance.
+6. **The transient audio endpoint is public by possession of its ID.** IDs are unguessable and short-lived, but signed URLs and object storage would provide stronger production controls.
+7. **Dynamic execution trusts catalog metadata.** `run_api` validates its outer shape, but correctness of endpoint parameter descriptions depends on Orthogonal's catalog.
+8. **Observability is limited to console logs.** There are no structured traces, spend dashboards, latency histograms, or alerts.
+9. **No automated agent eval suite exists.** Tool-selection regressions are currently caught through manual scenarios and smoke scripts.
+10. **Long conversations are truncated rather than summarized.** The latest 40 messages are retained for an agent request.
+11. **The default Orthogonal model does not truly token-stream.** Tool events remain incremental, but text arrives one agent step at a time.
+12. **Accessibility is improved but not formally audited.** Recipe overlays include keyboard behavior, but the complete application has not undergone WCAG testing with multiple screen readers.
+13. **Legal copy is appropriate product scaffolding, not jurisdiction-specific legal advice.** Privacy and Terms should be reviewed before a real commercial launch.
+14. **No CI workflow is included.** Verification currently runs locally through lint, TypeScript, production builds, smoke scripts, and browser checks.
 
-## Future improvements
+## Future Improvements
 
-With another week:
+### If I had another week
 
-- **Auth and per-user budgets** (Clerk plus a `users` table and a daily spend ledger). This unblocks actually letting strangers use it, which is the biggest current gap.
-- **Redis for cache and budget state**, making cost controls correct under concurrency instead of correct per instance.
-- **Rate limiting** at the middleware layer.
-- **Evals for tool selection.** A small fixture set of questions with expected tool choices, run against prompt changes. Tool-selection quality is the product; right now regressions are caught by vibes.
+1. **Authentication and tenant ownership.** Add an auth provider, a `users` table, and `user_id` on conversations. This is the prerequisite for safely inviting real customers.
+2. **Rate limits and spend ledgers.** Enforce per-user, per-IP, and global daily limits in shared storage. Record inference and data charges in one ledger.
+3. **Redis-backed cache and voice sessions.** Make deduplication, budgets, sessions, and temporary state correct across concurrent instances.
+4. **Agent evaluation fixtures.** Add representative prompts with expected tool choices, maximum cost, and answer-grounding checks. Tool selection is the core product behavior and needs regression protection.
+5. **Structured observability.** Add request IDs, tool latency, provider errors, spend velocity, and alerts.
+6. **Responsive navigation and accessibility audit.** Replace the fixed desktop rail with a mobile drawer at narrow widths and test the full keyboard/screen-reader flow.
+7. **CI pipeline.** Run lint, TypeScript, production build, unit tests, and a mocked tool-selection suite on every pull request.
 
-With another month:
+### If I had another month
 
-- **A curated-tool registry instead of hardcoded tools.** The five curated tools are code today. A registry (endpoint slug, path, schema, price, prompt description) stored in Postgres would let new catalog endpoints get promoted from "discovered dynamically" to "curated" without a deploy, closing the loop between the two halves of the hybrid design.
-- **Result citations.** Tool outputs carry request IDs; threading them into the answer text as citation markers would make the grounding verifiable instead of asserted.
-- **Cost-aware planning.** Give the model the turn budget and endpoint prices up front and let it plan the cheapest path to an answer, rather than discovering budget exhaustion mid-turn.
-- **Conversation summarization** so old context compresses instead of falling off the end.
+1. **Recipe registry and publishing workflow.** Store versioned recipes with authorship, permissions, usage metrics, and a promotion path from community recipe to trusted recipe.
+2. **Curated-tool registry.** Promote catalog endpoints into tested tools through configuration rather than code changes.
+3. **Evidence citations.** Thread Orthogonal request IDs and source URLs into answer-level citation markers.
+4. **Cost-aware planning.** Give the model a priced tool plan before execution and require confirmation above configurable thresholds.
+5. **Conversation summarization.** Compress earlier context instead of silently dropping it after 40 messages.
+6. **Durable realtime voice.** Move audio to signed object storage, sessions to Redis, and complete the realtime WebRTC interface.
+7. **Administrative controls.** Add usage dashboards, recipe management, endpoint allowlists, account suspension, and spend alerts.
+8. **Data retention controls.** Add export, deletion, configurable retention periods, and audit logging.
 
-## Running it
+## Changelog and Timeline
+
+### July 12, 2026 — Foundation
+
+- **00:27 — Initial scaffold (`702661c`).** Created the Next.js application baseline.
+- **01:33 — Core agent (`2d8da8b`).** Added the typed Orthogonal client, hybrid toolset, multi-step agent, streamed chat UI, conversation persistence, cost tracking, and error normalization.
+- **01:40 — Engineering narrative (`80028c2`).** Added the initial architecture, system diagram, design decisions, tradeoffs, and limitations.
+- **01:53 — Product design (`82bfdf6`).** Introduced Meridian's parchment-and-forest editorial visual system.
+- **02:30 — Single-key architecture (`df39bd1`).** Routed the default LLM through Orthogonal's Baseten endpoint so one Orthogonal key can power reasoning and data tools.
+
+### July 13, 2026 — Product completion pass
+
+- Added process-local conversation persistence when Postgres is absent.
+- Kept independent chat streams alive while navigating between conversations.
+- Added push-to-talk voice with Orthogonal speech-to-text and text-to-speech, shared tools, and session spend limits.
+- Added categorized, horizontally scrollable prompt suggestions.
+- Added the Meridian Cookbook with six reusable research recipes.
+- Added a shared typed recipe registry so landing cards and Use Cases details cannot drift.
+- Added recipe detail overlays with keyboard dismissal, focus containment, focus restoration, inputs, outputs, method, tools, and cost safeguards.
+- Added Privacy Policy, Terms of Use, and Use Cases routes with the stationary sidebar.
+- Added compact landing-page footer navigation and the informational-page horizon footer.
+- Added the global README button and `/readme` route that renders this repository file directly.
+- Replaced the system design block with a compact ASCII diagram that renders consistently in the repository and the in-app README.
+- Replaced the first-step-only thinking dots with a persistent accessible `Cooking` animation for the full multi-step agent run.
+- Updated lint, strict TypeScript, production build, and browser-interaction verification after the completion pass.
+
+## Running the Application
+
+### Prerequisites
+
+- Node.js compatible with Next.js 16
+- An Orthogonal account and API key
+- Optional Postgres database for durable history
+
+### Setup
 
 ```bash
-git clone <repo>
-cd <repo>
+git clone <repository-url>
+cd ortho-takehome
 npm install
-cp .env.example .env.local   # fill in ORTHOGONAL_API_KEY and one LLM key
+copy .env.example .env.local
 npm run dev
 ```
 
-Minimum viable env: `ORTHOGONAL_API_KEY`. That single key covers both the LLM (GLM-5.2 through Orthogonal's Baseten endpoint) and the data tools. Optionally set `LLM_PROVIDER=anthropic` or `openai` with the matching key for true token streaming. Without `DATABASE_URL` the app runs in ephemeral mode; with it, run `npx drizzle-kit push` once to create the two tables.
+Open `http://localhost:3000`.
 
-`npx tsx scripts/smoke.ts` sanity-checks your Orthogonal key against the live catalog without spending anything.
+The minimum configuration is:
+
+```env
+ORTHOGONAL_API_KEY=orth_live_xxxxxxxxxxxxxxxxxxxx
+```
+
+That key powers the default LLM path, data tools, and default voice provider. Without `DATABASE_URL`, the sidebar clearly reports ephemeral mode and history remains available only while the server process is alive.
+
+For durable Postgres history:
+
+```env
+DATABASE_URL=postgres://user:pass@host:5432/ortho
+```
+
+Then create the schema:
+
+```bash
+npx drizzle-kit push
+```
+
+For true token streaming through a direct provider:
+
+```env
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+```
+
+or:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=...
+```
+
+For deployed push-to-talk voice, set the public application origin so the speech-to-text provider can retrieve the temporary recording:
+
+```env
+VOICE_PUBLIC_BASE_URL=https://your-public-origin.example
+```
+
+### Environment variables
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `ORTHOGONAL_API_KEY` | Yes | — | Orthogonal inference, data tools, and default voice |
+| `ORTHOGONAL_BASE_URL` | No | `https://api.orthogonal.com` | Orthogonal host override |
+| `LLM_PROVIDER` | No | `orthogonal` | `orthogonal`, `anthropic`, or `openai` |
+| `LLM_MODEL` | No | Provider default | Model override |
+| `ANTHROPIC_API_KEY` | Conditional | — | Required for direct Anthropic mode |
+| `OPENAI_API_KEY` | Conditional | — | Required for direct OpenAI mode |
+| `DATABASE_URL` | No | — | Enables durable Postgres history |
+| `MAX_SPEND_CENTS_PER_TURN` | No | `50` | Paid data-tool budget per chat turn |
+| `MAX_AGENT_STEPS` | No | `8` | Maximum model/tool steps per turn |
+| `VOICE_PROVIDER` | No | `orthogonal` | `orthogonal` or experimental `xai` |
+| `VOICE_PUBLIC_BASE_URL` | Deployment-dependent | Request origin | Public origin used to serve transient recordings |
+| `VOICE_ELEVEN_VOICE_ID` | No | Rachel voice ID | Orthogonal TTS voice |
+| `VOICE_MAX_SESSION_SECONDS` | No | `300` | Voice session duration cap |
+| `VOICE_MAX_SPEND_CENTS` | No | `50` | Voice session spend cap |
+| `XAI_API_KEY` | Conditional | — | Required for xAI realtime mode |
+| `XAI_VOICE_MODEL` | No | `grok-voice-latest` | xAI realtime model |
+| `XAI_VOICE` | No | `eve` | xAI voice selection |
+
+## Verification
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+Orthogonal catalog smoke check:
+
+```bash
+npx tsx scripts/smoke.ts
+```
+
+Additional probe scripts in `scripts/` document live endpoint and model compatibility checks used during implementation.

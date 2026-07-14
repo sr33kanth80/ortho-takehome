@@ -1,27 +1,34 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useChat } from "@ai-sdk/react";
+import { Chat, useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { nanoid } from "nanoid";
 import type { ConversationSummary } from "@/lib/db/store";
 import { Composer } from "./composer";
 import { Message } from "./message";
 import { Sidebar } from "./sidebar";
+import { Cookbook } from "./cookbook";
+import { Suggestions } from "./suggestions";
+import { VoiceMode } from "./voice";
+import { MeridianFooterDock } from "./site-footer";
+import { LoadingBreadcrumb } from "./ui/animated-loading-svg-text-shimmer";
 
-const SUGGESTIONS = [
-  "Profile the company behind stripe.com",
-  "What's the latest news about Anthropic?",
-  "Find contact details for the LinkedIn profile linkedin.com/in/satyanadella",
-  "What job-listing APIs are in the catalog? Use one to find AI engineer roles.",
-];
+interface AppProps {
+  initialConversationId?: string;
+  initialRecipe?: string;
+}
 
-export function App() {
+export function App({ initialConversationId, initialRecipe }: AppProps) {
   const [conversationId, setConversationId] = useState<string>(() => nanoid(12));
-  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [persistent, setPersistent] = useState(true);
-  const [chatKey, setChatKey] = useState(0); // bump to remount ChatPane
+
+  // Persistent chat instances, one per conversation, kept alive for the whole
+  // session so an in-flight stream keeps running even when the user navigates
+  // to another conversation. useChat only subscribes to these instances; it
+  // never aborts them on unmount, so switching away and back is safe.
+  const [chats] = useState<Map<string, Chat<UIMessage>>>(() => new Map());
 
   const refreshSidebar = useCallback(async () => {
     try {
@@ -35,37 +42,111 @@ export function App() {
     }
   }, []);
 
-  useEffect(() => {
-    void refreshSidebar();
-  }, [refreshSidebar]);
+  const getOrCreateChat = useCallback(
+    (id: string, initial?: UIMessage[]) => {
+      let chat = chats.get(id);
+      if (!chat) {
+        chat = new Chat<UIMessage>({
+          id,
+          messages: initial ?? [],
+          transport: new DefaultChatTransport({ api: "/api/chat", body: { id } }),
+          onFinish: () => {
+            void refreshSidebar();
+          },
+        });
+        chats.set(id, chat);
+      }
+      return chat;
+    },
+    [chats, refreshSidebar],
+  );
 
-  const openConversation = useCallback(async (id: string) => {
-    try {
-      const res = await fetch(`/api/conversations/${id}`);
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages: UIMessage[] };
-      setConversationId(id);
-      setInitialMessages(data.messages);
-      setChatKey((k) => k + 1);
-    } catch {
-      /* ignore */
-    }
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/conversations")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          conversations: ConversationSummary[];
+          persistent: boolean;
+        };
+        if (!active) return;
+        setConversations(data.conversations);
+        setPersistent(data.persistent);
+      })
+      .catch(() => {
+        /* sidebar refresh is best-effort */
+      });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const openConversation = useCallback(
+    async (id: string) => {
+      // Already have a live (possibly still-streaming) instance? Just switch to
+      // it — refetching would clobber an in-progress stream with stale DB state.
+      if (chats.has(id)) {
+        setConversationId(id);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/conversations/${id}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { messages: UIMessage[] };
+        getOrCreateChat(id, data.messages);
+        setConversationId(id);
+      } catch {
+        /* ignore */
+      }
+    },
+    [chats, getOrCreateChat],
+  );
+
+  useEffect(() => {
+    if (!initialConversationId) return;
+    let active = true;
+    void fetch("/api/conversations/" + encodeURIComponent(initialConversationId))
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { messages: UIMessage[] };
+        if (!active) return;
+        getOrCreateChat(initialConversationId, data.messages);
+        setConversationId(initialConversationId);
+      })
+      .catch(() => {
+        /* A missing linked conversation falls back to a new chat. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [getOrCreateChat, initialConversationId]);
 
   const newConversation = useCallback(() => {
-    setConversationId(nanoid(12));
-    setInitialMessages([]);
-    setChatKey((k) => k + 1);
-  }, []);
+    const id = nanoid(12);
+    getOrCreateChat(id, []);
+    setConversationId(id);
+  }, [getOrCreateChat]);
 
   const deleteConversation = useCallback(
     async (id: string) => {
       await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      const chat = chats.get(id);
+      if (chat) {
+        try {
+          chat.stop();
+        } catch {
+          /* ignore */
+        }
+        chats.delete(id);
+      }
       if (id === conversationId) newConversation();
       void refreshSidebar();
     },
-    [conversationId, newConversation, refreshSidebar],
+    [chats, conversationId, newConversation, refreshSidebar],
   );
+
+  const activeChat = getOrCreateChat(conversationId);
 
   return (
     <div className="relative z-10 flex h-full">
@@ -76,35 +157,15 @@ export function App() {
         onSelect={openConversation}
         onNew={newConversation}
         onDelete={deleteConversation}
+        onHome={newConversation}
       />
-      <ChatPane
-        key={chatKey}
-        conversationId={conversationId}
-        initialMessages={initialMessages}
-        onTurnFinished={refreshSidebar}
-      />
+      <ChatPane key={conversationId} chat={activeChat} initialRecipe={initialRecipe} />
     </div>
   );
 }
 
-function ChatPane({
-  conversationId,
-  initialMessages,
-  onTurnFinished,
-}: {
-  conversationId: string;
-  initialMessages: UIMessage[];
-  onTurnFinished: () => void;
-}) {
-  const { messages, sendMessage, status, error, stop, regenerate, clearError } = useChat({
-    id: conversationId,
-    messages: initialMessages,
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      body: { id: conversationId },
-    }),
-    onFinish: onTurnFinished,
-  });
+function ChatPane({ chat, initialRecipe }: { chat: Chat<UIMessage>; initialRecipe?: string }) {
+  const { messages, sendMessage, status, error, stop, regenerate, clearError } = useChat({ chat });
 
   const streaming = status === "submitted" || status === "streaming";
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -123,41 +184,92 @@ function ChatPane({
 
   const empty = messages.length === 0;
 
+  if (empty) {
+    return (
+      <main className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="landing-page-scroll flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-[680px] flex-col px-6 pt-[10vh]">
+            <div className="mb-3 flex justify-center">
+              <span className="cook-heading relative font-[family-name:var(--font-display)] text-[44px] leading-[1.05] text-[var(--color-forest-ink)]">
+                <span className="cook-steam" aria-hidden>
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                Let&apos;s Cook
+              </span>
+            </div>
+            <p className="mx-auto mb-8 max-w-[560px] text-center text-[15px] leading-[1.5] text-[var(--ink-dim)]">
+              Meridian answers with live data: company profiles, people &amp; contacts, web and news
+              results, drawn from Orthogonal&apos;s API catalog, with every cent accounted for.
+            </p>
+
+            <Composer
+              large
+              disabled={streaming}
+              streaming={streaming}
+              onSend={(text) => sendMessage({ text })}
+              onStop={stop}
+            />
+            <p className="mt-2 text-center text-[11px] leading-[1.43] text-[var(--ink-faint)]">
+              answers are grounded in live paid API calls, with costs shown per tool call
+            </p>
+            <VoiceMode />
+
+            <div className="mt-8">
+              <Suggestions onPick={(text) => sendMessage({ text })} />
+            </div>
+          </div>
+
+          <div className="mx-auto w-full max-w-[680px] px-6 pb-28 pt-12">
+            <Cookbook
+              initialRecipe={initialRecipe}
+              onCook={(prompt) => sendMessage({ text: prompt })}
+            />
+          </div>
+        </div>
+        <MeridianFooterDock />
+      </main>
+    );
+  }
+
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[900px] px-6 py-8">
-          {empty ? (
-            <EmptyState onPick={(t) => sendMessage({ text: t })} />
-          ) : (
-            <div className="space-y-7 pb-4">
-              {messages.map((m) => (
-                <Message key={m.id} message={m} />
-              ))}
-              {status === "submitted" && (
-                <div className="msg-enter flex items-center gap-1.5 pl-1">
-                  <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-                  <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-                  <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-                </div>
-              )}
-              {error && (
-                <div className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-raised)] px-4 py-3 text-[14px] leading-[1.43] text-[var(--err)]">
-                  Something went wrong: {error.message || "request failed"}.{" "}
-                  <button
-                    type="button"
-                    className="underline underline-offset-2 hover:text-[var(--ink)]"
-                    onClick={() => {
-                      clearError();
-                      void regenerate();
-                    }}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="space-y-7 pb-4">
+            {messages.map((m, i) => (
+              <Message
+                key={m.id}
+                message={m}
+                streaming={streaming && m.role === "assistant" && i === messages.length - 1}
+              />
+            ))}
+            {streaming && (
+              <div className="msg-enter py-1 pl-1">
+                <LoadingBreadcrumb />
+              </div>
+            )}
+            {error && (
+              <div className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-raised)] px-4 py-3 text-[14px] leading-[1.43] text-[var(--err)]">
+                Something went wrong: {error.message || "request failed"}.{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-[var(--ink)]"
+                  onClick={() => {
+                    clearError();
+                    void regenerate();
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -169,36 +281,10 @@ function ChatPane({
           onStop={stop}
         />
         <p className="mt-2 text-center text-[11px] leading-[1.43] text-[var(--ink-faint)]">
-          answers are grounded in live paid API calls — costs shown per tool call
+          answers are grounded in live paid API calls, with costs shown per tool call
         </p>
+        <VoiceMode />
       </div>
     </main>
-  );
-}
-
-function EmptyState({ onPick }: { onPick: (t: string) => void }) {
-  return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-      <div className="mb-3 text-[32px] font-medium leading-tight text-[var(--ink)]">
-        Ask the real world.
-      </div>
-      <p className="mb-10 max-w-md text-[14px] leading-[1.43] text-[var(--ink-dim)]">
-        Meridian answers with live data — company profiles, people &amp; contacts, web and news
-        results — drawn from Orthogonal&apos;s API catalog, with every cent accounted for.
-      </p>
-      <div className="grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
-        {SUGGESTIONS.map((s, i) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => onPick(s)}
-            style={{ animationDelay: `${i * 70}ms` }}
-            className="msg-enter rounded-[16px] bg-[var(--bg-raised)] px-4 py-3 text-left text-[14px] leading-[1.43] text-[var(--ink-dim)] shadow-[var(--shadow-subtle)] transition-colors hover:text-[var(--ink)]"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }

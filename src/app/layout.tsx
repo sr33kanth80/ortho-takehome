@@ -1,19 +1,28 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, DM_Serif_Display } from "next/font/google";
+import { ReadmeButton } from "@/components/readme-button";
 import "./globals.css";
 
-// The design system's pplxSans is proprietary; the spec names Inter as its
-// substitute. Weights capped at 400/500 per the "no bold" rule.
+// Getclockwise design system. Body/UI text is Inter with tight editorial
+// tracking; the -0.03em tracking is applied in globals.css.
 const inter = Inter({
   variable: "--font-pplxsans",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600", "700"],
+});
+
+// The system's display face is PP Mori (proprietary); the spec names
+// DM Serif Display as its substitute for all headings/display text.
+const dmSerif = DM_Serif_Display({
+  variable: "--font-dmserif",
+  subsets: ["latin"],
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
-  title: "Meridian — live-data research assistant",
+  title: "Meridian: live data research assistant",
   description:
-    "AI chat assistant grounded in real-world data via Orthogonal's API catalog: companies, contacts, web results, and more.",
+    "AI chat assistant grounded in real world data via Orthogonal's API catalog: companies, contacts, web results, and more.",
 };
 
 export default function RootLayout({
@@ -22,8 +31,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
-      <body className="h-full overflow-hidden">{children}</body>
+    <html lang="en" className={`${inter.variable} ${dmSerif.variable} h-full`}>
+      <body className="h-full overflow-hidden">
+        <ReadmeButton />
+        {children}
+      </body>
     </html>
   );
 }
