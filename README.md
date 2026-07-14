@@ -463,6 +463,7 @@ If this application were deployed to production today, the primary concerns woul
 - Added the global README button and `/readme` route that renders this repository file directly.
 - Replaced the system design block with a compact ASCII diagram that renders consistently in the repository and the in-app README.
 - Replaced the first-step-only thinking dots with a persistent accessible `Cooking` animation for the full multi-step agent run.
+- Replaced the default favicon with Meridian's compass mark through the App Router icon metadata.
 - Updated lint, strict TypeScript, production build, and browser-interaction verification after the completion pass.
 
 ## Running the Application

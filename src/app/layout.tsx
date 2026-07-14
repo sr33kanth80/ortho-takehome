@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   title: "Meridian: live data research assistant",
   description:
     "AI chat assistant grounded in real world data via Orthogonal's API catalog: companies, contacts, web results, and more.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
