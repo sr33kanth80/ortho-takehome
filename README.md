@@ -8,9 +8,9 @@ The application exposes this exact file at `/readme`. The global **README** butt
 
 ## TLDR;
 
-Bera — I treated Meridian as the smallest honest version of the product we intended to build around Orthogonal: one conversational surface where a user can ask for research, the assistant can find the right live API, run it, and show the user exactly what happened and what it cost.
+Bera, I treated Meridian as the smallest honest version of the product we intended to build around Orthogonal: one conversational surface where a user can ask for research, the assistant can find the right live API, run it, and show the user exactly what happened and what it cost.
 
-I implemented that through a hybrid agent. The common paths are curated for reliability — company research, contacts, web, and news — while the long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo.
+I implemented that through a hybrid agent. The common paths are curated for reliability: company research, contacts, web, and news. The long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo.
 
 Visually, I implemented Orthogonal's design but with a medium-y, rolex-esque design: editorial typography, parchment, forest ink, restrained emerald accents, and a sense of considered craft. The goal was to make Meridian feel calm, premium, and trustworthy while still making the live-data machinery legible underneath.
 
@@ -445,15 +445,15 @@ If this application were deployed to production today, the primary concerns woul
 
 ## Changelog and Timeline
 
-### July 12, 2026 — Foundation
+### July 12, 2026: Foundation
 
-- **00:27 — Initial scaffold (`702661c`).** Created the Next.js application baseline.
-- **01:33 — Core agent (`2d8da8b`).** Added the typed Orthogonal client, hybrid toolset, multi-step agent, streamed chat UI, conversation persistence, cost tracking, and error normalization.
-- **01:40 — Engineering narrative (`80028c2`).** Added the initial architecture, system diagram, design decisions, tradeoffs, and limitations.
-- **01:53 — Product design (`82bfdf6`).** Introduced Meridian's parchment-and-forest editorial visual system.
-- **02:30 — Single-key architecture (`df39bd1`).** Routed the default LLM through Orthogonal's Baseten endpoint so one Orthogonal key can power reasoning and data tools.
+- **00:27: Initial scaffold (`702661c`).** Created the Next.js application baseline.
+- **01:33: Core agent (`2d8da8b`).** Added the typed Orthogonal client, hybrid toolset, multi-step agent, streamed chat UI, conversation persistence, cost tracking, and error normalization.
+- **01:40: Engineering narrative (`80028c2`).** Added the initial architecture, system diagram, design decisions, tradeoffs, and limitations.
+- **01:53: Product design (`82bfdf6`).** Introduced Meridian's parchment-and-forest editorial visual system.
+- **02:30: Single-key architecture (`df39bd1`).** Routed the default LLM through Orthogonal's Baseten endpoint so one Orthogonal key can power reasoning and data tools.
 
-### July 13, 2026 — Product completion pass
+### July 13, 2026: Product completion pass
 
 - Added process-local conversation persistence when Postgres is absent.
 - Kept independent chat streams alive while navigating between conversations.
@@ -534,13 +534,13 @@ VOICE_PUBLIC_BASE_URL=https://your-public-origin.example
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `ORTHOGONAL_API_KEY` | Yes | — | Orthogonal inference, data tools, and default voice |
+| `ORTHOGONAL_API_KEY` | Yes | N/A | Orthogonal inference, data tools, and default voice |
 | `ORTHOGONAL_BASE_URL` | No | `https://api.orthogonal.com` | Orthogonal host override |
 | `LLM_PROVIDER` | No | `orthogonal` | `orthogonal`, `anthropic`, or `openai` |
 | `LLM_MODEL` | No | Provider default | Model override |
-| `ANTHROPIC_API_KEY` | Conditional | — | Required for direct Anthropic mode |
-| `OPENAI_API_KEY` | Conditional | — | Required for direct OpenAI mode |
-| `DATABASE_URL` | No | — | Enables durable Postgres history |
+| `ANTHROPIC_API_KEY` | Conditional | N/A | Required for direct Anthropic mode |
+| `OPENAI_API_KEY` | Conditional | N/A | Required for direct OpenAI mode |
+| `DATABASE_URL` | No | N/A | Enables durable Postgres history |
 | `MAX_SPEND_CENTS_PER_TURN` | No | `50` | Paid data-tool budget per chat turn |
 | `MAX_AGENT_STEPS` | No | `8` | Maximum model/tool steps per turn |
 | `VOICE_PROVIDER` | No | `orthogonal` | `orthogonal` or experimental `xai` |
@@ -548,7 +548,7 @@ VOICE_PUBLIC_BASE_URL=https://your-public-origin.example
 | `VOICE_ELEVEN_VOICE_ID` | No | Rachel voice ID | Orthogonal TTS voice |
 | `VOICE_MAX_SESSION_SECONDS` | No | `300` | Voice session duration cap |
 | `VOICE_MAX_SPEND_CENTS` | No | `50` | Voice session spend cap |
-| `XAI_API_KEY` | Conditional | — | Required for xAI realtime mode |
+| `XAI_API_KEY` | Conditional | N/A | Required for xAI realtime mode |
 | `XAI_VOICE_MODEL` | No | `grok-voice-latest` | xAI realtime model |
 | `XAI_VOICE` | No | `eve` | xAI voice selection |
 
