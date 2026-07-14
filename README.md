@@ -6,6 +6,14 @@ Meridian is a web-based AI research assistant that answers questions with live d
 
 The application exposes this exact file at `/readme`. The global **README** button in the top-right corner of every page opens that route, so the repository document and evaluator-facing document have one source of truth.
 
+## TLDR;
+
+Bera — I treated Meridian as the smallest honest version of the product we intended to build around Orthogonal: one conversational surface where a user can ask for research, the assistant can find the right live API, run it, and show the user exactly what happened and what it cost.
+
+I implemented that through a hybrid agent. The common paths are curated for reliability — company research, contacts, web, and news — while the long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo.
+
+Visually, I implemented Orthogonal's design but with a medium-y, rolex-esque design: editorial typography, parchment, forest ink, restrained emerald accents, and a sense of considered craft. The goal was to make Meridian feel calm, premium, and trustworthy while still making the live-data machinery legible underneath.
+
 ## Architecture
 
 ### The problem, in my own words
@@ -25,13 +33,11 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - A single server-side Orthogonal API key funds inference, data tools, and the default voice pipeline. The key is never sent to the browser.
 - Postgres is optional during evaluation. Without `DATABASE_URL`, the application uses a process-local in-memory conversation store so the complete interface remains usable.
 - Recipes are transparent prompt templates and research methods, not a separate autonomous runtime. Starting a recipe hands its instructions to the same Meridian agent and cost controls used by ordinary chat.
-- Voice is another interface to the same agent, not a separate product or tool implementation.
 - Live API responses are the source of truth when they differ from documentation. Probe scripts were used to validate Orthogonal response shapes and endpoint prices.
 - The current scope prioritizes the Orthogonal integration, agent behavior, cost visibility, resilience, and evaluator experience over commodity authentication work.
 
 ### Functional requirements
 
-- Users can send text messages and receive AI responses grounded in live Orthogonal data.
 - The agent can chain multiple tools in one turn.
 - Common company, contact, web, and news tasks use curated, validated tools.
 - Unusual requests can search the Orthogonal catalog, inspect an endpoint schema, and execute the selected endpoint.
@@ -45,7 +51,6 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - The Use Cases page presents every recipe and opens its full details in an accessible overlay without navigating away.
 - Privacy Policy, Terms of Use, Use Cases, and README pages share the stationary application sidebar.
 - A compact footer exposes Use Cases, Privacy, and Terms links on the landing page.
-- A global README button opens the current repository README from every page.
 
 ### Non-functional requirements
 
@@ -116,7 +121,6 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 
 ### API specification
 
-All application endpoints are same-origin Next.js route handlers. There is currently no authentication layer.
 
 #### `POST /api/chat`
 
