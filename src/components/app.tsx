@@ -188,7 +188,7 @@ function ChatPane({ chat, initialRecipe }: { chat: Chat<UIMessage>; initialRecip
     return (
       <main className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         <div className="landing-page-scroll flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-[680px] flex-col px-6 pt-[10vh]">
+          <div className="landing-hero mx-auto flex w-full max-w-[680px] flex-col px-6">
             <div className="mb-3 flex justify-center">
               <span className="cook-heading relative font-[family-name:var(--font-display)] text-[44px] leading-[1.05] text-[var(--color-forest-ink)]">
                 <span className="cook-steam" aria-hidden>

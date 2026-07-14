@@ -220,6 +220,16 @@ body {
 }
 
 /* ── "Let's Cook" hero — steam wisps rising off the wordmark ──────────── */
+.landing-hero {
+  padding-top: clamp(124px, 16vh, 176px);
+}
+
+@media (max-height: 720px) {
+  .landing-hero {
+    padding-top: clamp(96px, 13vh, 128px);
+  }
+}
+
 @keyframes cook-rise {
   from {
     opacity: 0;
