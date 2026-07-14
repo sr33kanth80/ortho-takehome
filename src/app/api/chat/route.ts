@@ -10,7 +10,7 @@ import { getModel, SYSTEM_PROMPT } from "@/lib/llm";
 import { createTools } from "@/lib/tools";
 import { SpendTracker } from "@/lib/tools/spend";
 import { saveMessages, titleFrom } from "@/lib/db/store";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasUsedGuestRun } from "@/lib/auth";
 
 export const maxDuration = 120; // agent turns with several tool calls need headroom
 
@@ -21,7 +21,9 @@ interface ChatBody {
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
-  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
+  if (!user && await hasUsedGuestRun()) {
+    return Response.json({ error: "Create an account to continue your research." }, { status: 401 });
+  }
   let body: ChatBody;
   try {
     body = (await req.json()) as ChatBody;
@@ -44,14 +46,16 @@ export async function POST(req: Request) {
     return Response.json({ error: "Malformed messages" }, { status: 400 });
   }
 
-  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-  if (latestUserMessage) {
-    const firstUserText = latestUserMessage.parts
+  const firstUserMessage = messages.find((message) => message.role === "user");
+  if (user && firstUserMessage) {
+    const firstUserText = firstUserMessage.parts
       .filter((part): part is { type: "text"; text: string } => part.type === "text")
       .map((part) => part.text)
       .join(" ");
     try {
-      await saveMessages(user.id, conversationId, [{ message: latestUserMessage }], { titleIfNew: titleFrom(firstUserText) });
+      // This also claims the finished guest exchange if the visitor created an
+      // account before sending their next turn.
+      await saveMessages(user.id, conversationId, messages.map((message) => ({ message })), { titleIfNew: titleFrom(firstUserText) });
     } catch (error) {
       console.error("[chat] failed to persist submitted message:", error);
       return Response.json({ error: "Could not save this conversation." }, { status: 503 });
@@ -85,6 +89,7 @@ export async function POST(req: Request) {
       return undefined;
     },
     onFinish: async ({ messages: finalMessages }) => {
+      if (!user) return;
       try {
         const lastUser = [...finalMessages].reverse().find((m) => m.role === "user");
         const firstUserText =

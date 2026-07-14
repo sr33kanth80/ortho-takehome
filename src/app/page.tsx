@@ -1,5 +1,5 @@
 import { App } from "@/components/app";
-import { getCurrentUser, isAuthConfigured } from "@/lib/auth";
+import { getCurrentUser, hasUsedGuestRun, isAuthConfigured } from "@/lib/auth";
 
 export default async function Page({
   searchParams,
@@ -10,6 +10,7 @@ export default async function Page({
   const conversation = typeof params.conversation === "string" ? params.conversation : undefined;
   const recipe = typeof params.recipe === "string" ? params.recipe : undefined;
   const user = await getCurrentUser();
+  const guestRunUsed = user ? false : await hasUsedGuestRun();
 
-  return <App initialConversationId={conversation} initialRecipe={recipe} user={user} authConfigured={isAuthConfigured()} />;
+  return <App initialConversationId={conversation} initialRecipe={recipe} user={user} authConfigured={isAuthConfigured()} guestRunUsed={guestRunUsed} />;
 }

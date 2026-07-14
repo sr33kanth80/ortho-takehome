@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { getDb, schema } from "@/lib/db";
 
 export const SESSION_COOKIE = "meridian_session";
+export const GUEST_COMPLETE_COOKIE = "meridian_guest_run_complete";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export interface AuthUser {
@@ -20,6 +21,20 @@ export function sessionCookieOptions() {
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
   };
+}
+
+export function guestCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  };
+}
+
+export async function hasUsedGuestRun() {
+  return (await cookies()).get(GUEST_COMPLETE_COOKIE)?.value === "1";
 }
 
 function hashToken(token: string) {

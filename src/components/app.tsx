@@ -21,16 +21,19 @@ interface AppProps {
   initialRecipe?: string;
   user: AuthUser | null;
   authConfigured: boolean;
+  guestRunUsed: boolean;
 }
 
 export function App(props: AppProps) {
-  if (!props.user) return <AuthScreen configured={props.authConfigured} />;
-  return <AuthenticatedApp {...props} user={props.user} />;
+  const [authOpen, setAuthOpen] = useState(false);
+  if (authOpen) return <AuthScreen configured={props.authConfigured} />;
+  return <MeridianWorkspace {...props} onRequireAuth={() => setAuthOpen(true)} />;
 }
 
-function AuthenticatedApp({ initialConversationId, initialRecipe, user }: AppProps & { user: AuthUser }) {
+function MeridianWorkspace({ initialConversationId, initialRecipe, user, guestRunUsed, onRequireAuth }: AppProps & { onRequireAuth: () => void }) {
   const [conversationId, setConversationId] = useState<string>(() => nanoid(12));
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [guestLocked, setGuestLocked] = useState(guestRunUsed);
 
   // Persistent chat instances, one per conversation, kept alive for the whole
   // session so an in-flight stream keeps running even when the user navigates
@@ -49,6 +52,12 @@ function AuthenticatedApp({ initialConversationId, initialRecipe, user }: AppPro
     }
   }, []);
 
+  const completeGuestRun = useCallback((id: string, messages: UIMessage[]) => {
+    window.sessionStorage.setItem("meridian-guest-thread", JSON.stringify({ id, messages }));
+    setGuestLocked(true);
+    void fetch("/api/guest/complete", { method: "POST" });
+  }, []);
+
   const getOrCreateChat = useCallback(
     (id: string, initial?: UIMessage[]) => {
       let chat = chats.get(id);
@@ -57,16 +66,37 @@ function AuthenticatedApp({ initialConversationId, initialRecipe, user }: AppPro
           id,
           messages: initial ?? [],
           transport: new DefaultChatTransport({ api: "/api/chat", body: { id } }),
-          onFinish: () => {
-            void refreshSidebar();
+          onFinish: ({ messages: finishedMessages }) => {
+            if (user) {
+              void refreshSidebar();
+            } else {
+              completeGuestRun(id, finishedMessages);
+            }
           },
         });
         chats.set(id, chat);
       }
       return chat;
     },
-    [chats, refreshSidebar],
+    [chats, completeGuestRun, refreshSidebar, user],
   );
+
+  useEffect(() => {
+    if (!user) return;
+    const stored = window.sessionStorage.getItem("meridian-guest-thread");
+    if (!stored) return;
+    try {
+      const recovered = JSON.parse(stored) as { id?: string; messages?: UIMessage[] };
+      if (recovered.id && Array.isArray(recovered.messages)) {
+        getOrCreateChat(recovered.id, recovered.messages);
+        setConversationId(recovered.id);
+      }
+    } catch {
+      /* An invalid old browser value should not block sign-in. */
+    } finally {
+      window.sessionStorage.removeItem("meridian-guest-thread");
+    }
+  }, [getOrCreateChat, user]);
 
   useEffect(() => {
     let active = true;
@@ -158,22 +188,45 @@ function AuthenticatedApp({ initialConversationId, initialRecipe, user }: AppPro
       <Sidebar
         conversations={conversations}
         activeId={conversationId}
-        userEmail={user.email}
+        userEmail={user?.email ?? "One complimentary research run"}
         onSelect={openConversation}
-        onNew={newConversation}
+        onNew={guestLocked ? onRequireAuth : newConversation}
         onDelete={deleteConversation}
-        onHome={newConversation}
+        onHome={guestLocked ? onRequireAuth : newConversation}
         onSignOut={async () => {
+          if (!user) {
+            onRequireAuth();
+            return;
+          }
           await fetch("/api/auth/logout", { method: "POST" });
           window.location.assign("/");
         }}
       />
-      <ChatPane key={conversationId} chat={activeChat} initialRecipe={initialRecipe} />
+      <ChatPane
+        key={conversationId}
+        chat={activeChat}
+        initialRecipe={initialRecipe}
+        guestLocked={guestLocked}
+        canUseVoice={Boolean(user)}
+        onRequireAuth={onRequireAuth}
+      />
     </div>
   );
 }
 
-function ChatPane({ chat, initialRecipe }: { chat: Chat<UIMessage>; initialRecipe?: string }) {
+function ChatPane({
+  chat,
+  initialRecipe,
+  guestLocked,
+  canUseVoice,
+  onRequireAuth,
+}: {
+  chat: Chat<UIMessage>;
+  initialRecipe?: string;
+  guestLocked: boolean;
+  canUseVoice: boolean;
+  onRequireAuth: () => void;
+}) {
   const { messages, sendMessage, status, error, stop, regenerate, clearError } = useChat({ chat });
 
   const streaming = status === "submitted" || status === "streaming";
@@ -192,6 +245,13 @@ function ChatPane({ chat, initialRecipe }: { chat: Chat<UIMessage>; initialRecip
   };
 
   const empty = messages.length === 0;
+  const send = (text: string) => {
+    if (guestLocked) {
+      onRequireAuth();
+      return;
+    }
+    sendMessage({ text });
+  };
 
   if (empty) {
     return (
@@ -219,25 +279,27 @@ function ChatPane({ chat, initialRecipe }: { chat: Chat<UIMessage>; initialRecip
 
             <Composer
               large
-              disabled={streaming}
+              disabled={streaming || guestLocked}
               streaming={streaming}
-              onSend={(text) => sendMessage({ text })}
+              onSend={send}
               onStop={stop}
             />
             <p className="mt-2 text-center text-[11px] leading-[1.43] text-[var(--ink-faint)]">
               answers are grounded in live paid API calls, with costs shown per tool call
             </p>
-            <VoiceMode />
+            {canUseVoice && <VoiceMode />}
+
+            {guestLocked && <GuestGate onContinue={onRequireAuth} />}
 
             <div className="mt-8">
-              <Suggestions onPick={(text) => sendMessage({ text })} />
+              <Suggestions onPick={send} />
             </div>
           </div>
 
           <div className="mx-auto w-full max-w-[680px] px-6 pb-28 pt-12">
             <Cookbook
               initialRecipe={initialRecipe}
-              onCook={(prompt) => sendMessage({ text: prompt })}
+              onCook={send}
             />
           </div>
         </div>
@@ -278,22 +340,37 @@ function ChatPane({ chat, initialRecipe }: { chat: Chat<UIMessage>; initialRecip
                 </button>
               </div>
             )}
+            {guestLocked && !streaming && <GuestGate onContinue={onRequireAuth} />}
           </div>
         </div>
       </div>
 
       <div className="mx-auto w-full max-w-[900px] px-6 pb-5">
         <Composer
-          disabled={streaming}
+          disabled={streaming || guestLocked}
           streaming={streaming}
-          onSend={(text) => sendMessage({ text })}
+          onSend={send}
           onStop={stop}
         />
         <p className="mt-2 text-center text-[11px] leading-[1.43] text-[var(--ink-faint)]">
           answers are grounded in live paid API calls, with costs shown per tool call
         </p>
-        <VoiceMode />
+        {canUseVoice && <VoiceMode />}
       </div>
     </main>
+  );
+}
+
+function GuestGate({ onContinue }: { onContinue: () => void }) {
+  return (
+    <div className="meridian-guest-gate">
+      <div>
+        <p className="meridian-guest-gate-kicker">Your first course is on us</p>
+        <p className="meridian-guest-gate-copy">Create an account to keep this thread, ask the next question, and come back to it later.</p>
+      </div>
+      <button className="meridian-primary-button shrink-0" type="button" onClick={onContinue}>
+        Keep cooking <span aria-hidden>→</span>
+      </button>
+    </div>
   );
 }
