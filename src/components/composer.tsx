@@ -20,8 +20,10 @@ export function Composer({ disabled, streaming, onSend, onStop, large = false }:
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, large ? 260 : 200)}px`;
+    const maxHeight = large ? 176 : 144;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [large, value]);
 
   const submit = () => {
@@ -48,7 +50,7 @@ export function Composer({ disabled, streaming, onSend, onStop, large = false }:
         rows={1}
         placeholder="Ask about a company, a person, or anything on the web…"
         style={large ? { minHeight: 96 } : undefined}
-        className="w-full resize-none bg-transparent px-4 py-4 pr-14 text-[16px] leading-[1.5] text-[var(--ink)] outline-none placeholder:text-[var(--ink-dim)]"
+        className="w-full resize-none overflow-y-auto bg-transparent px-4 py-4 pr-14 text-[16px] leading-[1.5] text-[var(--ink)] outline-none placeholder:text-[var(--ink-dim)]"
       />
       <div className="absolute bottom-2.5 right-2.5">
         {streaming ? (
