@@ -32,7 +32,7 @@ export async function POST() {
     );
   }
 
-  const session = createVoiceSession(user.id);
+  const session = createVoiceSession(user.id, user.companyId);
   const caps = {
     maxSessionSeconds: env.voice.maxSessionSeconds,
     maxSpendCents: env.voice.maxSpendCents,

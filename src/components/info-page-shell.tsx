@@ -10,6 +10,7 @@ export function InfoPageShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isManager, setIsManager] = useState(false);
 
   const refreshSidebar = useCallback(async () => {
     try {
@@ -43,8 +44,9 @@ export function InfoPageShell({ children }: { children: ReactNode }) {
     void fetch("/api/auth/me")
       .then(async (response) => {
         if (!response.ok) return;
-        const data = (await response.json()) as { user: { email: string } | null };
+        const data = (await response.json()) as { user: { email: string; role: string } | null };
         setUserEmail(data.user?.email ?? null);
+        setIsManager(data.user?.role === "manager");
       })
       .catch(() => {});
   }, []);
@@ -60,6 +62,7 @@ export function InfoPageShell({ children }: { children: ReactNode }) {
         conversations={conversations}
         activeId={null}
         userEmail={userEmail ?? "Sign in to save history"}
+        isManager={isManager}
         onSelect={(id) => router.push("/?conversation=" + encodeURIComponent(id))}
         onNew={() => router.push("/")}
         onDelete={deleteConversation}

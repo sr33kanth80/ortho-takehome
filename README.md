@@ -2,7 +2,7 @@
 
 Meridian is a web-based AI research assistant that answers questions with live data through [Orthogonal](https://orthogonal.com). It combines conversational research, visible tool execution, per-call cost reporting, reusable research recipes, persistent history, and optional push-to-talk voice in one interface.
 
-**Last updated:** July 14, 2026
+**Last updated:** July 23, 2026
 
 The application exposes this exact file at `/readme`. The global **README** button in the top-right corner of every page opens that route, so the repository document and evaluator-facing document have one source of truth.
 
@@ -11,6 +11,8 @@ The application exposes this exact file at `/readme`. The global **README** butt
 Bera, I treated Meridian as the smallest honest version of the product we intended to build around Orthogonal: one conversational surface where a user can ask for research, the assistant can find the right live API, run it, and show the user exactly what happened and what it cost.
 
 I implemented that through a hybrid agent. The common paths are curated for reliability: company research, contacts, web, and news. The long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo. Someone can try one completed research run before being asked to create an account; when they do, Meridian carries that first thread into the new account.
+
+Dynamic execution is also an enterprise-governed capability. Managers control exactly three things: endpoint access policy, employee execution access, and spend/usage limits. Those decisions are enforced inside the server-side execution path and every attempted dynamic run is written to an investigation ledger. The manager workspace at `/management` exposes usage, individual execution evidence, and an append-only change history without changing the employee chat workflow.
 
 Visually, I implemented Orthogonal's design but with a medium-y, rolex-esque design: editorial typography, parchment, forest ink, restrained emerald accents, and a sense of considered craft. The goal was to make Meridian feel calm, premium, and trustworthy while still making the live-data machinery legible underneath.
 
@@ -42,6 +44,8 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - The agent can chain multiple tools in one turn.
 - Common company, contact, web, and news tasks use curated, validated tools.
 - Unusual requests can search the Orthogonal catalog, inspect an endpoint schema, and execute the selected endpoint.
+- Company managers can govern endpoint access, employee execution access, and per-call/daily/monthly limits; each control affects the live agent path.
+- Managers can monitor monthly usage and investigate allowed, blocked, failed, and indeterminate executions from `/management`.
 - Tool inputs, outputs, failures, and attributed costs are visible in the conversation trace.
 - A persistent animated `Cooking` status remains visible for the entire agent turn, including pauses between multiple tool calls and final answer synthesis.
 - Conversation history can be listed, reopened, resumed, and deleted.
@@ -56,10 +60,10 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 
 ### Non-functional requirements
 
-- **Cost safety:** every chat turn has a server-enforced paid-tool budget, defaulting to 50 cents. Voice has independent session duration and spend caps.
+- **Cost safety:** every chat turn has a server-enforced paid-tool budget, defaulting to 50 cents. Governed dynamic calls also reserve durable per-call, daily employee, and monthly company budget in Postgres before execution. Voice has independent session duration and spend caps.
 - **Transparency:** the UI shows which tools ran and the cost attributed to each assistant turn.
 - **Resilience:** malformed input is rejected, upstream failures are normalized, tool errors are returned to the model as data, and persistence failures do not break a response stream.
-- **Performance:** catalog searches and schemas are cached; identical successful paid calls are deduplicated for ten minutes on the current server instance.
+- **Performance:** catalog searches and schemas are cached; identical successful curated calls can be deduplicated for ten minutes on the current server instance. Governed dynamic executions bypass that cache because the durable execution ledger is the billing source of truth.
 - **Portability:** model selection is controlled by environment variables. Orthogonal, Anthropic, and OpenAI providers share the same AI SDK interface.
 - **Security:** secrets stay server-side, paid calls pass through a budget gate, tool outputs are length-bounded, and Orthogonal requests have a 30-second timeout.
 - **Accessibility:** interactive cards are keyboard controls; recipe dialogs support Escape, backdrop dismissal, focus containment, and focus restoration.
@@ -84,12 +88,13 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 |  AI SDK agent ------> Model provider ------> Orthogonal API      |
 |       |                                      (AI + STT/TTS)       |
 |       v                                                          |
-|  Hybrid tools --> Spend gate --> Orthogonal client               |
+|  Hybrid tools --> governance + spend gate --> Orthogonal client  |
 |                                      |                            |
 |                                      +--> API catalog             |
 |                                      +--> TTL cache               |
 |                                                                  |
-|  Accounts + conversation store ---------> Postgres                |
+|  Accounts + conversations + execution ledger --> Postgres        |
+|  Manager workspace: policy, access, limits, audit --> Postgres    |
 |  Completed guest-run marker ------------> HttpOnly browser cookie |
 |  /readme -------------------------------> README.md               |
 +------------------------------------------------------------------+
@@ -101,11 +106,12 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 2. The server validates and caps history at the latest 40 messages.
 3. A new `SpendTracker` and toolset are created for the turn.
 4. The AI SDK runs the selected model for at most `MAX_AGENT_STEPS` steps.
-5. Curated or dynamically discovered tools call Orthogonal through the typed client.
-6. Paid calls pass through the budget check. Successful identical calls may be served from the TTL cache.
-7. Text and tool events stream to the browser through the AI SDK UI-message protocol.
-8. Final cost metadata is attached to the assistant message.
-9. For an authenticated account, the visible history is saved to Postgres before execution and the final assistant state is upserted after streaming. A completed guest run remains only in the browser until the visitor creates an account; its client-side history is then sent and persisted with the first authenticated continuation.
+5. Curated tools call Orthogonal directly through the typed client. Dynamic discovery is filtered by company endpoint policy and schema inspection is authorized again.
+6. Immediately before `run_api`, Meridian re-fetches catalog details, validates required parameters and fixed price, rechecks employee and endpoint authorization, and transactionally reserves company budget.
+7. The execution is recorded as pending, then finalized as succeeded, failed, blocked, or indeterminate with cost, latency, sanitized evidence, and the upstream request ID.
+8. Text and tool events stream to the browser through the AI SDK UI-message protocol.
+9. Final cost metadata is attached to the assistant message.
+10. For an authenticated account, the visible history is saved to Postgres before execution and the final assistant state is upserted after streaming. A completed guest run remains only in the browser until the visitor creates an account; its client-side history is then sent and persisted with the first authenticated continuation.
 
 ### Major components
 
@@ -116,6 +122,9 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 | `src/lib/llm.ts` | Provider-neutral model selection and Orthogonal-routed inference |
 | `src/lib/tools/index.ts` | Curated tools, dynamic catalog tools, structured tool failures |
 | `src/lib/tools/spend.ts` | Server-side per-turn and per-session spend accounting |
+| `src/lib/governance/execution.ts` | Company policy enforcement, durable budget reservation, execution state machine, and evidence capture |
+| `src/lib/governance/management.ts` | Manager authorization, configuration mutations, usage queries, and append-only change auditing |
+| `src/app/management/page.tsx` | Manager-only company control room for access, policy, spend, monitoring, and investigation |
 | `src/lib/orthogonal/client.ts` | Authenticated Orthogonal search, details, list, and run requests; cache and error normalization |
 | `src/lib/db/store.ts` | Postgres-backed, owner-scoped conversation history |
 | `src/lib/auth.ts` | Password sessions, account lookup, and completed-guest-run cookie helpers |
@@ -284,6 +293,8 @@ sessions
   expires_at    timestamptz not null
 ```
 
+Enterprise dynamic execution adds `companies`, `company_memberships`, `company_dynamic_settings`, `dynamic_api_policies`, `dynamic_api_executions`, and `governance_audit_events`. The execution ledger is deliberately relational and queryable: it stores the actor, endpoint, method, status, policy decision, estimated and actual cost, duration, upstream request ID, and bounded secret-redacted request/result previews. The migration is additive and preserves compatible company tables from earlier deployments.
+
 `messages.parts` stores the AI SDK `UIMessage.parts` array verbatim. A message can contain ordered text, tool inputs, tool outputs, states, and metadata. JSONB preserves replay fidelity without introducing a brittle set of normalized tool-call tables. `cost_cents` is denormalized because per-turn cost is displayed frequently.
 
 #### Process-local entities
@@ -323,13 +334,13 @@ The Orthogonal client uses a process-local cache with resource-specific TTLs:
 | Catalog search | 5 minutes | Avoid repeated semantic search while allowing catalog changes |
 | Endpoint details | 1 hour | Schemas and prices change infrequently |
 | Endpoint list | 10 minutes | Stable catalog navigation data |
-| Successful paid run | 10 minutes | Prevent duplicate charges for identical requests |
+| Successful curated run | 10 minutes | Prevent duplicate charges for identical common-path requests |
 
-This improves latency and cost behavior on one warm instance. Redis would be the production replacement for cross-instance consistency.
+This improves latency and cost behavior on one warm instance. Governed `run_api` calls deliberately bypass the run cache and instead use the Postgres tool-call key for cross-instance idempotency and auditable billing attribution.
 
-#### Spend trackers
+#### Spend trackers and durable reservations
 
-A new server-side `SpendTracker` is created per chat turn. Every paid tool checks the remaining budget before execution and records the actual or estimated charge afterward. Voice sessions have a longer-lived tracker with their own duration and spend caps.
+A new server-side `SpendTracker` is created per chat turn. Every paid tool checks the remaining budget before execution and records the actual or estimated charge afterward. Governed dynamic calls additionally lock the company settings row and count pending reservations plus completed charges before inserting a pending execution, so concurrent Vercel requests share the same employee and company ceilings. Voice sessions have a longer-lived tracker with their own duration and spend caps.
 
 #### Voice session and audio stores
 
@@ -380,6 +391,12 @@ The AI SDK provides multi-step tool calling, provider abstraction, validated UI 
 
 Budget instructions exist in the system prompt, but the enforcement mechanism is a server-side counter closed over by every paid tool. Client-side limits are bypassable, and prompt-only numeric limits are unreliable.
 
+For company dynamic execution, the per-turn counter is only the first perimeter. Postgres enforces maximum cost per call, daily employee usage, and monthly company usage under a row lock. Pending reservations count against limits, preventing parallel requests from racing past the configured ceiling.
+
+### Three enterprise governance controls
+
+Meridian implements exactly three manager-controlled capabilities: API endpoint allow/deny policy, per-employee dynamic execution access, and spend/usage limits. Discovery filtering improves agent choices, but it is not the security boundary: endpoint policy and employee access are evaluated again immediately before `run_api`. Every manager mutation is written to `governance_audit_events`.
+
 ### Structured tool failures
 
 Tools return normalized `{ ok: false, error }` results rather than throwing. A thrown tool exception can abort the entire stream. A structured failure lets the agent try one sensible alternative or explain the failure with the partial evidence already gathered.
@@ -407,7 +424,7 @@ The default voice flow is browser recording -> Orthogonal speech-to-text -> exis
 ## Tradeoffs
 
 - **Self-hosted credential auth:** this keeps the setup simple and establishes ownership now, but delegates email verification, password recovery, MFA, SSO, and account governance to future work.
-- **Process-local cache:** zero additional service is required, but deduplication and catalog caching are not coordinated across server instances.
+- **Process-local cache:** catalog caching and general curated-call deduplication are not coordinated across server instances. Company dynamic budgets and tool-call idempotency are durable in Postgres.
 - **Database-required history:** customers get durable, owner-scoped conversations, but a database must be provisioned before the app can be used.
 - **One guest run per browser:** this keeps the public landing page useful without making anonymous usage the product. It is cookie-based, so it is a conversion boundary rather than a strong anti-abuse control.
 - **Client-supplied history persistence:** preserving a newly claimed guest thread means the first authenticated continuation replays browser-held history into Postgres. It is practical for this small product, but arbitrary edits to old messages are not a first-class workflow.
@@ -425,13 +442,13 @@ The default voice flow is browser recording -> Orthogonal speech-to-text -> exis
 If this application were deployed to production today, the primary concerns would be:
 
 1. **Authentication is deliberately basic.** Email/password accounts establish ownership, but there is no email verification, password reset, MFA, SSO, rate limiting, or per-user quota yet. The one-run guest boundary is cookie-based and can be bypassed by clearing browser data.
-2. **There is no rate limiter.** Parallel requests can each receive a fresh per-turn budget.
-3. **Spend and deduplication are instance-local.** Separate serverless instances do not share their `SpendTracker` or cache state.
+2. **General request throttling remains separate from dynamic governance.** Dynamic per-call/daily/monthly budgets are concurrency-safe in Postgres, but chat, login, and curated-tool endpoints still need shared IP/user request-rate protection.
+3. **Catalog caching remains instance-local.** Separate serverless instances do not share discovery/schema cache entries, although governed dynamic execution budgets and tool-call idempotency are durable.
 4. **Inference spend is missing from the ledger.** The UI reports data-tool charges, not total Orthogonal spend including model calls.
 5. **Voice storage is single-instance.** A speech provider can fail to retrieve an in-memory clip if a request is routed to another instance.
 6. **The transient audio endpoint is public by possession of its ID.** IDs are unguessable and short-lived, but signed URLs and object storage would provide stronger production controls.
-7. **Dynamic execution trusts catalog metadata.** `run_api` validates its outer shape, but correctness of endpoint parameter descriptions depends on Orthogonal's catalog.
-8. **Observability is limited to console logs.** There are no structured traces, spend dashboards, latency histograms, or alerts.
+7. **Dynamic validation is bounded by catalog metadata.** Meridian re-fetches details, rejects unknown/dynamic pricing, enforces required parameters, and caps payload size, but semantic correctness still depends on Orthogonal's catalog descriptions.
+8. **Dynamic execution has a structured ledger and manager dashboard.** Broader model, curated-tool, and voice telemetry still needs centralized metrics and alerting.
 9. **No automated agent eval suite exists.** Tool-selection regressions are currently caught through manual scenarios and smoke scripts.
 10. **Long conversations are truncated rather than summarized.** The latest 40 messages are retained for an agent request.
 11. **The default Orthogonal model does not truly token-stream.** Tool events remain incremental, but text arrives one agent step at a time.
@@ -444,7 +461,7 @@ If this application were deployed to production today, the primary concerns woul
 ### If I had another week
 
 1. **Account hardening and rate limits.** Add email verification, password reset, MFA or SSO, and per-user, per-IP, and global daily limits in shared storage.
-2. **Spend ledgers.** Record inference and data charges in one ledger.
+2. **Unified spend ledger.** Add inference and curated-tool charges to the durable dynamic execution ledger.
 3. **Redis-backed cache and voice sessions.** Make deduplication, budgets, sessions, and temporary state correct across concurrent instances.
 4. **Agent evaluation fixtures.** Add representative prompts with expected tool choices, maximum cost, and answer-grounding checks. Tool selection is the core product behavior and needs regression protection.
 5. **Structured observability.** Add request IDs, tool latency, provider errors, spend velocity, and alerts.
@@ -459,7 +476,7 @@ If this application were deployed to production today, the primary concerns woul
 4. **Cost-aware planning.** Give the model a priced tool plan before execution and require confirmation above configurable thresholds.
 5. **Conversation summarization.** Compress earlier context instead of silently dropping it after 40 messages.
 6. **Durable realtime voice.** Move audio to signed object storage, sessions to Redis, and complete the realtime WebRTC interface.
-7. **Administrative controls.** Add usage dashboards, recipe management, endpoint allowlists, account suspension, and spend alerts.
+7. **Broader administrative controls.** Extend the shipped dynamic execution control room with recipe management, SSO group sync, retention policy, and spend alerts.
 8. **Data retention controls.** Add export, deletion, configurable retention periods, and audit logging.
 
 ## Changelog and Timeline
@@ -495,6 +512,15 @@ If this application were deployed to production today, the primary concerns woul
 - Replaced anonymous process-memory history with account-backed Postgres history.
 - Made the AI chat experience the public landing page again: one completed guest research run is available before account creation is required.
 - Preserved that first guest thread through account creation so a new user can continue the same conversation.
+
+### July 23, 2026: Enterprise dynamic API execution
+
+- Added company memberships with manager authorization while preserving the existing chat-first employee experience.
+- Added exactly three live governance controls: endpoint access policy, employee execution access, and per-call/daily/monthly spend limits.
+- Added policy-aware discovery and schema inspection plus a final server-side authorization, validation, and fixed-price check before `run_api`.
+- Added concurrency-safe Postgres budget reservations, tool-call idempotency, explicit indeterminate outcomes, sanitized evidence previews, and an investigation ledger.
+- Added the `/management` control room with usage metrics, configuration workflows, execution drill-down, and append-only change history.
+- Added focused governance tests, migration verification, production-build validation, and desktop/mobile browser checks.
 
 ## Running the Application
 
@@ -567,6 +593,7 @@ VOICE_PUBLIC_BASE_URL=https://your-public-origin.example
 | `ANTHROPIC_API_KEY` | Conditional | N/A | Required for direct Anthropic mode |
 | `OPENAI_API_KEY` | Conditional | N/A | Required for direct OpenAI mode |
 | `DATABASE_URL` | Yes | N/A | Accounts, sessions, and durable Postgres history |
+| `MERIDIAN_COMPANY_NAME` | No | `Meridian Company` | Company label used when bootstrapping a fresh deployment |
 | `MAX_SPEND_CENTS_PER_TURN` | No | `50` | Paid data-tool budget per chat turn |
 | `MAX_AGENT_STEPS` | No | `8` | Maximum model/tool steps per turn |
 | `VOICE_PROVIDER` | No | `orthogonal` | `orthogonal` or experimental `xai` |
@@ -582,6 +609,8 @@ VOICE_PUBLIC_BASE_URL=https://your-public-origin.example
 
 ```bash
 npm run lint
+npm test
+npm run verify:governance
 npx tsc --noEmit
 npm run build
 ```

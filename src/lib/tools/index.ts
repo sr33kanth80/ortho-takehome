@@ -3,6 +3,12 @@ import { z } from "zod";
 import { getOrthogonalClient } from "@/lib/orthogonal/client";
 import { OrthogonalError } from "@/lib/orthogonal/errors";
 import { SpendTracker, usdToCents } from "./spend";
+import {
+  authorizeDetails,
+  executeGovernedDynamicApi,
+  filterDiscoveryForCompany,
+  type ExecutionActor,
+} from "@/lib/governance/execution";
 
 /**
  * Tool layer — the hybrid design.
@@ -26,6 +32,7 @@ const MAX_RESULT_CHARS = 12_000;
 
 export interface ToolResultMeta {
   ok: boolean;
+  executionId?: string;
   costCents?: number;
   totalSpentCents?: number;
   error?: string;
@@ -75,7 +82,7 @@ async function paidRun(
  * Build the toolset for one chat turn. A fresh SpendTracker must be passed per
  * request so budgets are per-turn, not per-process.
  */
-export function createTools(spend: SpendTracker) {
+export function createTools(spend: SpendTracker, actor?: ExecutionActor) {
   return {
     // ── curated: companies ──────────────────────────────────────────────
     enrich_company: tool({
@@ -193,7 +200,14 @@ export function createTools(spend: SpendTracker) {
       }),
       execute: async ({ prompt, limit }) => {
         try {
-          const res = await getOrthogonalClient().search(prompt, limit ?? 8);
+          const raw = await getOrthogonalClient().search(prompt, limit ?? 8);
+          const res = actor ? await filterDiscoveryForCompany(actor, raw) : raw;
+          if (actor && !res.results?.length) {
+            return {
+              ok: false,
+              error: "No company-approved catalog endpoint matched this request. Do not try an unapproved endpoint; explain that a manager can review API access.",
+            } satisfies ToolResultMeta;
+          }
           const { text, truncated } = trim(
             res.results?.map((a) => ({
               name: a.name,
@@ -227,6 +241,12 @@ export function createTools(spend: SpendTracker) {
         try {
           const res = await getOrthogonalClient().details(api, path);
           const ep = res.endpoint;
+          if (actor) {
+            const decision = await authorizeDetails(actor, api, ep);
+            if (!decision.allowed) {
+              return { ok: false, error: `${decision.reason} Do not call run_api for this endpoint.` } satisfies ToolResultMeta;
+            }
+          }
           const { text, truncated } = trim({
             api: res.api?.slug,
             path: ep?.path,
@@ -259,8 +279,29 @@ export function createTools(spend: SpendTracker) {
           .optional()
           .describe("The endpoint's price from get_api_details, used for budget pre-checks"),
       }),
-      execute: async ({ api, path, query, body, estimated_price_usd }) =>
-        paidRun(spend, { api, path, query, body }, estimated_price_usd),
+      execute: async ({ api, path, query, body, estimated_price_usd }, options) => {
+        if (!actor) return paidRun(spend, { api, path, query, body }, estimated_price_usd);
+        const governed = await executeGovernedDynamicApi(actor, options.toolCallId, { api, path, query, body }, spend.remainingCents);
+        if (!governed.ok) {
+          return {
+            ok: false,
+            executionId: governed.executionId,
+            error: `${governed.error}${governed.executionId ? ` Execution ID: ${governed.executionId}.` : ""}`,
+            totalSpentCents: spend.totalCents,
+          } satisfies ToolResultMeta;
+        }
+        const cost = governed.costCents ?? 0;
+        spend.record(api, path, cost);
+        const { text, truncated } = trim(governed.data);
+        return {
+          ok: true,
+          executionId: governed.executionId,
+          costCents: cost,
+          totalSpentCents: spend.totalCents,
+          data: text,
+          truncated,
+        } satisfies ToolResultMeta & { data: string };
+      },
     }),
   };
 }

@@ -84,7 +84,7 @@ export async function POST(req: Request) {
       model: getModel(),
       system: VOICE_INSTRUCTIONS,
       messages,
-      tools: createTools(session.spend),
+      tools: createTools(session.spend, { userId: session.userId, companyId: session.companyId }),
       stopWhen: stepCountIs(env.guards.maxAgentSteps),
       onError: ({ error }) => console.error("[voice] agent error:", error),
     });

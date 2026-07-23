@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   // One budget per turn: however the model chains tools, it cannot spend more
   // than MAX_SPEND_CENTS_PER_TURN of Orthogonal credit in this request.
   const spend = new SpendTracker();
-  const tools = createTools(spend);
+  const tools = createTools(spend, user ? { userId: user.id, companyId: user.companyId, conversationId } : undefined);
 
   const result = streamText({
     model: getModel(),

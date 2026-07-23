@@ -1,5 +1,6 @@
 import { createTools } from "@/lib/tools";
 import type { SpendTracker } from "@/lib/tools/spend";
+import type { ExecutionActor } from "@/lib/governance/execution";
 
 /**
  * Voice tool bridge.
@@ -159,6 +160,8 @@ export async function executeVoiceTool(
   name: string,
   args: Record<string, unknown>,
   spend: SpendTracker,
+  actor: ExecutionActor,
+  toolCallId: string,
 ): Promise<VoiceToolResult> {
   const base = (data: Partial<VoiceToolResult>): VoiceToolResult => ({
     ok: false,
@@ -173,13 +176,13 @@ export async function executeVoiceTool(
     return base({ ok: false, output: `Unknown tool: ${name}` });
   }
 
-  const tools = createTools(spend) as unknown as Record<
+  const tools = createTools(spend, actor) as unknown as Record<
     string,
     { execute: (a: unknown, o: unknown) => Promise<{ ok: boolean; data?: string; error?: string; costCents?: number }> }
   >;
   try {
     const res = await tools[name].execute(args, {
-      toolCallId: `voice-${name}`,
+      toolCallId,
       messages: [],
     });
     return base({

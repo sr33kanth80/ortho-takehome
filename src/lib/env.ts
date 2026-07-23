@@ -82,6 +82,11 @@ export const env = {
   get databaseUrl() {
     return optional("DATABASE_URL");
   },
+  company: {
+    get name() {
+      return optional("MERIDIAN_COMPANY_NAME") ?? "Meridian Company";
+    },
+  },
   guards: {
     get maxSpendCentsPerTurn() {
       return int("MAX_SPEND_CENTS_PER_TURN", 50);

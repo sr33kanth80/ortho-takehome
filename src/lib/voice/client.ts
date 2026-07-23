@@ -203,7 +203,7 @@ export class VoiceClient {
       const res = await fetch("/api/voice/tool", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: this.sessionId, name, arguments: args }),
+        body: JSON.stringify({ sessionId: this.sessionId, name, callId: traceId, arguments: args }),
       });
       const data = (await res.json()) as {
         ok?: boolean;

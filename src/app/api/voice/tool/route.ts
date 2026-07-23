@@ -14,6 +14,7 @@ interface Body {
   sessionId?: string;
   name?: string;
   arguments?: Record<string, unknown>;
+  callId?: string;
 }
 
 export async function POST(req: Request) {
@@ -43,6 +44,12 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await executeVoiceTool(name, body.arguments ?? {}, session.spend);
+  const result = await executeVoiceTool(
+    name,
+    body.arguments ?? {},
+    session.spend,
+    { userId: session.userId, companyId: session.companyId },
+    body.callId || `voice-${session.id}-${Date.now()}`,
+  );
   return Response.json(result);
 }

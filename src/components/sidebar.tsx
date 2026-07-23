@@ -11,9 +11,10 @@ interface Props {
   onDelete: (id: string) => void;
   onHome: () => void;
   onSignOut: () => void;
+  isManager?: boolean;
 }
 
-export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, onDelete, onHome, onSignOut }: Props) {
+export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, onDelete, onHome, onSignOut, isManager = false }: Props) {
   return (
     <aside className="meridian-sidebar flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
       {/* brand mark — Getclockwise diamond/compass glyph + wordmark; returns home */}
@@ -102,6 +103,7 @@ export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, o
       </nav>
 
       <div className="border-t border-[var(--border)] px-4 py-3">
+        {isManager && <a href="/management" className="mb-3 flex items-center justify-between rounded-[6px] border border-[var(--border)] px-3 py-2 text-[12px] text-[var(--color-forest-ink)] hover:bg-[var(--bg-hover)]"><span>Company management</span><span aria-hidden>→</span></a>}
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="truncate text-[11px] text-[var(--ink-faint)]" title={userEmail}>{userEmail}</p>
           <button type="button" onClick={onSignOut} className="shrink-0 text-[11px] text-[var(--accent)] underline underline-offset-2">{userEmail.includes("@") ? "Sign out" : "Sign in"}</button>

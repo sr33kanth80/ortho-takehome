@@ -72,10 +72,12 @@ export class OrthogonalClient {
     return res;
   }
 
-  async details(api: string, path: string): Promise<DetailsResponse> {
+  async details(api: string, path: string, fresh = false): Promise<DetailsResponse> {
     const key = stableKey("orth:details", { api, path });
-    const cached = await this.cache.get<DetailsResponse>(key);
-    if (cached) return cached;
+    if (!fresh) {
+      const cached = await this.cache.get<DetailsResponse>(key);
+      if (cached) return cached;
+    }
     const res = await this.request<DetailsResponse>("POST", "/v1/details", {
       body: { api, path },
     });
@@ -87,13 +89,15 @@ export class OrthogonalClient {
    * Execute a catalog endpoint. THIS COSTS MONEY.
    * Identical calls are de-duplicated for a short window via the cache.
    */
-  async run<T = unknown>(args: RunArgs): Promise<RunResponse<T>> {
+  async run<T = unknown>(args: RunArgs, options: { dedupe?: boolean } = {}): Promise<RunResponse<T>> {
     const key = stableKey("orth:run", args);
-    const cached = await this.cache.get<RunResponse<T>>(key);
-    if (cached) return { ...cached, requestId: cached.requestId } as RunResponse<T>;
+    if (options.dedupe !== false) {
+      const cached = await this.cache.get<RunResponse<T>>(key);
+      if (cached) return { ...cached, requestId: cached.requestId } as RunResponse<T>;
+    }
     const res = await this.request<RunResponse<T>>("POST", "/v1/run", { body: args });
     // Only cache successful, priced responses.
-    if (res.success) await this.cache.set(key, res, TTL.run);
+    if (res.success && options.dedupe !== false) await this.cache.set(key, res, TTL.run);
     return res;
   }
 

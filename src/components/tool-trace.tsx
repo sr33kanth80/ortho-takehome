@@ -26,6 +26,7 @@ interface ToolOutput {
   error?: string;
   data?: string;
   truncated?: boolean;
+  executionId?: string;
 }
 
 function inputSummary(input: unknown): string {
@@ -129,6 +130,12 @@ export function ToolTrace({ part }: { part: ToolUIPart }) {
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all text-[var(--ink-dim)]">
                 {formatData(out.data)}
               </pre>
+            </div>
+          )}
+          {out?.executionId && (
+            <div className="flex items-center justify-between gap-4 border-t border-[var(--border)] pt-2 text-[10px] text-[var(--ink-faint)]">
+              <span>audited execution</span>
+              <span>{out.executionId}</span>
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { createSession, isAuthConfigured, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
+import { createSession, isAuthConfigured, provisionCompanyMembership, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 
 function credentials(value: unknown) {
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
 
   const id = nanoid(16);
   await db.insert(schema.users).values({ id, email: input.email, passwordHash: await bcrypt.hash(input.password, 12) });
+  await provisionCompanyMembership(id);
   const token = await createSession(id);
   const response = Response.json({ user: { id, email: input.email } }, { status: 201 });
   response.headers.append("Set-Cookie", `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionCookieOptions().maxAge}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);

@@ -85,17 +85,21 @@ function MeridianWorkspace({ initialConversationId, initialRecipe, user, guestRu
     if (!user) return;
     const stored = window.sessionStorage.getItem("meridian-guest-thread");
     if (!stored) return;
+    let cancelled = false;
     try {
       const recovered = JSON.parse(stored) as { id?: string; messages?: UIMessage[] };
       if (recovered.id && Array.isArray(recovered.messages)) {
         getOrCreateChat(recovered.id, recovered.messages);
-        setConversationId(recovered.id);
+        queueMicrotask(() => {
+          if (!cancelled) setConversationId(recovered.id!);
+        });
       }
     } catch {
       /* An invalid old browser value should not block sign-in. */
     } finally {
       window.sessionStorage.removeItem("meridian-guest-thread");
     }
+    return () => { cancelled = true; };
   }, [getOrCreateChat, user]);
 
   useEffect(() => {
@@ -189,6 +193,7 @@ function MeridianWorkspace({ initialConversationId, initialRecipe, user, guestRu
         conversations={conversations}
         activeId={conversationId}
         userEmail={user?.email ?? "One complimentary research run"}
+        isManager={user?.role === "manager"}
         onSelect={openConversation}
         onNew={guestLocked ? onRequireAuth : newConversation}
         onDelete={deleteConversation}
