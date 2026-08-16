@@ -7,7 +7,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const { id } = await ctx.params;
   try {
-    const messages = await getConversationMessages(user.id, id);
+    const messages = await getConversationMessages({ userId: user.id, companyId: user.companyId }, id);
     if (!messages) return Response.json({ error: "Conversation not found" }, { status: 404 });
     return Response.json({ id, messages });
   } catch (e) {
@@ -22,7 +22,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const { id } = await ctx.params;
   try {
-    const deleted = await deleteConversation(user.id, id);
+    const deleted = await deleteConversation({ userId: user.id, companyId: user.companyId }, id);
     if (!deleted) return Response.json({ error: "Conversation not found" }, { status: 404 });
     return Response.json({ ok: true });
   } catch (e) {

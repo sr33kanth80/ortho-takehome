@@ -56,7 +56,12 @@ export async function POST(req: Request) {
     try {
       // This also claims the finished guest exchange if the visitor created an
       // account before sending their next turn.
-      await saveMessages(user.id, conversationId, messages.map((message) => ({ message })), { titleIfNew: titleFrom(firstUserText) });
+      await saveMessages(
+        { userId: user.id, companyId: user.companyId },
+        conversationId,
+        messages.map((message) => ({ message })),
+        { titleIfNew: titleFrom(firstUserText) },
+      );
     } catch (error) {
       console.error("[chat] failed to persist submitted message:", error);
       return Response.json({ error: "Could not save this conversation." }, { status: 503 });
@@ -106,7 +111,7 @@ export async function POST(req: Request) {
           message,
           costCents: message.role === "assistant" ? spend.totalCents : 0,
         }));
-        await saveMessages(user.id, conversationId, toSave, {
+        await saveMessages({ userId: user.id, companyId: user.companyId }, conversationId, toSave, {
           titleIfNew: titleFrom(firstUserText),
         });
       } catch (e) {

@@ -6,7 +6,7 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
-    const conversations = await listConversations(user.id);
+    const conversations = await listConversations({ userId: user.id, companyId: user.companyId });
     return Response.json({ conversations });
   } catch (e) {
     console.error("[conversations] list failed:", e);
