@@ -11,8 +11,8 @@ import {
   Mail,
   Pause,
   Play,
-  Plus,
-  Search,
+  Send,
+  Sparkles,
   Target,
   UserRoundSearch,
   X,
@@ -93,36 +93,7 @@ export type ProspectingView = {
   accounts: Account[];
 };
 
-type Tab = "pipeline" | "brief";
-
-const EMPTY_PROFILE: BusinessProfile = {
-  businessName: "",
-  website: "",
-  offer: "",
-  valueProposition: "",
-  targetIndustries: [],
-  targetLocations: [],
-  companySizes: [],
-  buyerRoles: [],
-  buyingSignals: [],
-  exclusions: [],
-  exampleCustomers: [],
-  notes: "",
-};
-
-const listFields: Array<{ key: keyof BusinessProfile; label: string; hint: string }> = [
-  { key: "targetIndustries", label: "Target industries", hint: "Battery manufacturing, energy storage" },
-  { key: "targetLocations", label: "Geographies", hint: "United States, Midwest" },
-  { key: "companySizes", label: "Company sizes", hint: "50–500 employees, Series B+" },
-  { key: "buyerRoles", label: "Likely buyers", hint: "VP Engineering, Head of Thermal Systems" },
-  { key: "buyingSignals", label: "Buying signals", hint: "New plant, hiring thermal engineers, recent funding" },
-  { key: "exclusions", label: "Exclude", hint: "Consultancies, consumer-only businesses" },
-  { key: "exampleCustomers", label: "Best-fit examples", hint: "Existing customers or dream accounts" },
-];
-
-function asList(value: string) {
-  return value.split(/[,\n]/).map((part) => part.trim()).filter(Boolean);
-}
+type IntakeTurn = { role: "user" | "assistant"; text: string };
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & { error?: string };
@@ -140,13 +111,18 @@ function ScoreStamp({ score }: { score: number }) {
 }
 
 export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingView; userEmail: string }) {
-  const [view, setView] = useState<Tab>(initial.profile ? "pipeline" : "brief");
   const [data, setData] = useState(initial);
-  const [profileDraft, setProfileDraft] = useState<BusinessProfile>(initial.profile ?? EMPTY_PROFILE);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [newMissionOpen, setNewMissionOpen] = useState(false);
-  const [missionDraft, setMissionDraft] = useState({ name: "", brief: "", targetCount: 25, maxSpendCents: 300 });
+  const [prompt, setPrompt] = useState("");
+  const [intakeMessages, setIntakeMessages] = useState<IntakeTurn[]>([
+    {
+      role: "assistant",
+      text: initial.profile
+        ? `I know ${initial.profile.businessName}'s customer thesis. Tell me what to change, who to find next, or ask me to continue the selected mission.`
+        : "Tell me what your business sells and the kinds of customers you want. I’ll ask only what I need, then turn it into a live prospecting mission.",
+    },
+  ]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -169,7 +145,6 @@ export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingVi
     setBusy("select");
     try {
       await refresh(id);
-      setView("pipeline");
       setExpandedId(null);
     } catch (error) {
       setNotice({ kind: "error", text: (error as Error).message });
@@ -178,36 +153,27 @@ export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingVi
     }
   };
 
-  const saveProfile = async () => {
-    setBusy("profile");
+  const sendIntake = async () => {
+    const text = prompt.trim();
+    if (!text || busy === "intake") return;
+    const messages: IntakeTurn[] = [...intakeMessages, { role: "user" as const, text }].slice(-12);
+    setIntakeMessages(messages);
+    setPrompt("");
+    setBusy("intake");
     setNotice(null);
     try {
-      const payload = { ...profileDraft, website: profileDraft.website || null, notes: profileDraft.notes || null };
-      await readJson(await fetch("/api/prospecting/profile", {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      const { result } = await readJson<{ result: { action: string; reply: string; missionId: string | null; run: { inserted: number; costCents: number } | null } }>(await fetch("/api/prospecting/intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages, selectedMissionId: selected?.id ?? null }),
       }));
-      await refresh(selected?.id);
-      setNotice({ kind: "ok", text: "Business brief saved. Meridian will use it in every future mission." });
-      setView("pipeline");
+      setIntakeMessages((current) => [...current, { role: "assistant" as const, text: result.reply }].slice(-12));
+      await refresh(result.missionId ?? selected?.id);
+      if (result.action === "create_mission") setNotice({ kind: "ok", text: "Mission created from your conversation. No paid research ran yet." });
+      if (result.action === "update_profile") setNotice({ kind: "ok", text: "Your living customer thesis has been updated." });
+      if (result.run) setNotice({ kind: "ok", text: `${result.run.inserted} new prospect${result.run.inserted === 1 ? "" : "s"} saved for ${(result.run.costCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}.` });
     } catch (error) {
-      setNotice({ kind: "error", text: (error as Error).message });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const createMission = async () => {
-    setBusy("create");
-    setNotice(null);
-    try {
-      const { mission } = await readJson<{ mission: Mission }>(await fetch("/api/prospecting/missions", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(missionDraft),
-      }));
-      setNewMissionOpen(false);
-      setMissionDraft({ name: "", brief: "", targetCount: 25, maxSpendCents: 300 });
-      await refresh(mission.id);
-      setNotice({ kind: "ok", text: "Mission created. The first research batch is ready to run." });
-    } catch (error) {
+      setPrompt(text);
       setNotice({ kind: "error", text: (error as Error).message });
     } finally {
       setBusy(null);
@@ -273,17 +239,8 @@ export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingVi
         </Link>
         <p className="prospecting-rail-kicker">Customer-finding desk</p>
 
-        <nav aria-label="Prospecting navigation">
-          <button type="button" className={view === "pipeline" ? "active" : ""} onClick={() => setView("pipeline")}>
-            <Target size={15} /> Mission board
-          </button>
-          <button type="button" className={view === "brief" ? "active" : ""} onClick={() => setView("brief")}>
-            <Search size={15} /> Business brief
-          </button>
-        </nav>
-
         <div className="prospecting-mission-list">
-          <div className="prospecting-list-label"><span>Missions</span><button type="button" title="New mission" onClick={() => setNewMissionOpen(true)} disabled={!data.profile}><Plus size={14} /></button></div>
+          <div className="prospecting-list-label"><span>Mission history</span></div>
           {data.missions.map((mission) => (
             <button key={mission.id} type="button" className={selected?.id === mission.id ? "selected" : ""} onClick={() => void selectMission(mission.id)} disabled={busy === "select"}>
               <span className={`mission-dot ${mission.status}`} />
@@ -301,11 +258,17 @@ export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingVi
 
       <main className="prospecting-main">
         {notice && <div className={`prospecting-notice ${notice.kind}`}><span>{notice.text}</span><button type="button" onClick={() => setNotice(null)}><X size={14} /></button></div>}
-        {view === "brief" ? (
-          <BusinessBrief draft={profileDraft} setDraft={setProfileDraft} onSave={saveProfile} busy={busy === "profile"} isNew={!data.profile} />
-        ) : (
+        <UnifiedProspectingInput
+          profile={data.profile}
+          selectedMission={selected}
+          messages={intakeMessages}
+          prompt={prompt}
+          busy={busy === "intake"}
+          onPrompt={setPrompt}
+          onSend={() => void sendIntake()}
+        />
+        {selected ? (
           <MissionBoard
-            profile={data.profile}
             mission={selected}
             accounts={data.accounts}
             metrics={metrics}
@@ -313,8 +276,6 @@ export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingVi
             expandedId={expandedId}
             rejectingId={rejectingId}
             rejectReason={rejectReason}
-            onOpenBrief={() => setView("brief")}
-            onNewMission={() => setNewMissionOpen(true)}
             onRun={() => void runMission()}
             onExpand={setExpandedId}
             onReview={(id, status, reason) => void review(id, status, reason)}
@@ -322,68 +283,89 @@ export function ProspectingDesk({ initial, userEmail }: { initial: ProspectingVi
             onRejectReason={setRejectReason}
             onFindContacts={(id) => void findContacts(id)}
           />
-        )}
+        ) : <ConversationPrimer hasProfile={Boolean(data.profile)} onExample={setPrompt} />}
       </main>
-
-      {newMissionOpen && (
-        <div className="prospecting-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setNewMissionOpen(false); }}>
-          <section className="mission-composer" role="dialog" aria-modal="true" aria-labelledby="new-mission-title">
-            <button className="mission-composer-close" type="button" onClick={() => setNewMissionOpen(false)}><X size={16} /></button>
-            <span>New search commission</span>
-            <h2 id="new-mission-title">What should Meridian go find?</h2>
-            <label>Mission name<input value={missionDraft.name} onChange={(event) => setMissionDraft({ ...missionDraft, name: event.target.value })} placeholder="Midwest battery manufacturers" /></label>
-            <label>Search brief<textarea value={missionDraft.brief} onChange={(event) => setMissionDraft({ ...missionDraft, brief: event.target.value })} placeholder="Find manufacturers expanding production that may need thermal simulation support. Prioritize observable growth signals and engineering leadership." /></label>
-            <div className="mission-composer-row">
-              <label>Target accounts<input type="number" min={1} max={100} value={missionDraft.targetCount} onChange={(event) => setMissionDraft({ ...missionDraft, targetCount: Number(event.target.value) })} /></label>
-              <label>Mission budget ($)<input type="number" min={0.01} step={0.01} value={missionDraft.maxSpendCents / 100} onChange={(event) => setMissionDraft({ ...missionDraft, maxSpendCents: Math.max(1, Math.round(Number(event.target.value) * 100)) })} /></label>
-            </div>
-            <button className="meridian-primary-button" type="button" onClick={() => void createMission()} disabled={busy === "create" || !missionDraft.name.trim() || !missionDraft.brief.trim()}>
-              {busy === "create" ? "Opening…" : "Open mission"}<span aria-hidden>→</span>
-            </button>
-          </section>
-        </div>
-      )}
     </div>
   );
 }
 
-function BusinessBrief({ draft, setDraft, onSave, busy, isNew }: { draft: BusinessProfile; setDraft: (profile: BusinessProfile) => void; onSave: () => void; busy: boolean; isNew: boolean }) {
+function UnifiedProspectingInput({ profile, selectedMission, messages, prompt, busy, onPrompt, onSend }: {
+  profile: BusinessProfile | null;
+  selectedMission: Mission | null;
+  messages: IntakeTurn[];
+  prompt: string;
+  busy: boolean;
+  onPrompt: (value: string) => void;
+  onSend: () => void;
+}) {
+  const examples = profile
+    ? ["Find 25 Midwest manufacturers showing expansion signals", "Continue the selected mission", "Update our target buyer to VP Operations"]
+    : ["We install commercial solar systems for warehouses in Texas. Find operations leaders at companies expanding their footprint.", "We sell cybersecurity audits to regional banks. Find 20 likely buyers with recent compliance or hiring signals."];
   return (
-    <div className="brief-page">
-      <header className="prospecting-header">
-        <div><p>01 / Assignment desk</p><h1>{isNew ? "Teach Meridian your business." : "Your customer thesis."}</h1></div>
-        <span className="prospecting-folio">Living brief · used in every mission</span>
-      </header>
-      <div className="brief-intro">
-        <p>Meridian turns this brief into search criteria, qualification rules, buyer roles, and signal tests. Be specific enough that a researcher could distinguish a good lead from a merely famous company.</p>
+    <section className="unified-agent-shell" aria-labelledby="unified-agent-title">
+      <div className="unified-agent-heading">
+        <div><span>One conversation · live customer research</span><h1 id="unified-agent-title">Who should Meridian find?</h1></div>
+        <div className="unified-agent-context">
+          <i className={profile ? "ready" : ""} />
+          <span>{profile ? `${profile.businessName} thesis loaded` : "Start with what you sell"}</span>
+          {selectedMission && <small>{selectedMission.name} selected</small>}
+        </div>
       </div>
-      <section className="brief-sheet">
-        <div className="brief-two">
-          <label>Business name<input value={draft.businessName} onChange={(event) => setDraft({ ...draft, businessName: event.target.value })} placeholder="Northstar Thermal" /></label>
-          <label>Website <span>optional</span><input value={draft.website ?? ""} onChange={(event) => setDraft({ ...draft, website: event.target.value })} placeholder="northstarthermal.com" /></label>
-        </div>
-        <label>What do you sell?<textarea value={draft.offer} onChange={(event) => setDraft({ ...draft, offer: event.target.value })} placeholder="We provide battery-pack thermal simulation and design consulting for manufacturers bringing new storage products to production." /></label>
-        <label>Why does a customer choose you?<textarea value={draft.valueProposition} onChange={(event) => setDraft({ ...draft, valueProposition: event.target.value })} placeholder="We reduce prototype cycles and thermal risk before expensive physical validation." /></label>
-        <div className="brief-grid">
-          {listFields.map((field) => (
-            <label key={field.key}>{field.label}<textarea className="compact" value={(draft[field.key] as string[]).join(", ")} onChange={(event) => setDraft({ ...draft, [field.key]: asList(event.target.value) })} placeholder={field.hint} /></label>
-          ))}
-          <label>Context for the agent <span>optional</span><textarea className="compact" value={draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Deal size, sales cycle, constraints, language, or anything a good researcher should know." /></label>
-        </div>
-        <div className="brief-submit"><p>Edits affect future batches. Existing scored prospects remain unchanged so review history stays auditable.</p><button className="meridian-primary-button" type="button" onClick={onSave} disabled={busy || !draft.businessName.trim() || !draft.offer.trim() || !draft.valueProposition.trim()}>{busy ? "Saving…" : "Save customer thesis"}<span>→</span></button></div>
-      </section>
-    </div>
+
+      <div className="unified-agent-thread" aria-live="polite">
+        {messages.slice(-4).map((message, index) => (
+          <div className={`unified-turn ${message.role}`} key={`${message.role}-${index}-${message.text.slice(0, 20)}`}>
+            <span>{message.role === "assistant" ? <Sparkles size={12} /> : "You"}</span>
+            <p>{message.text}</p>
+          </div>
+        ))}
+        {busy && <div className="unified-turn assistant thinking"><span><Sparkles size={12} /></span><p>Reading your intent and preparing the next safe action…</p></div>}
+      </div>
+
+      <div className="unified-composer">
+        <textarea
+          aria-label="Tell Meridian what customers to find"
+          value={prompt}
+          onChange={(event) => onPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              onSend();
+            }
+          }}
+          placeholder={profile ? "Describe the next customer search, revise your thesis, or tell Meridian to continue…" : "Tell me what you sell, who benefits, and what kinds of businesses I should find…"}
+          disabled={busy}
+        />
+        <button type="button" onClick={onSend} disabled={busy || !prompt.trim()} aria-label="Send to Meridian"><Send size={17} /></button>
+        <div className="unified-composer-foot"><span>Enter to send · Shift + Enter for a new line</span><span>Paid research only runs when you explicitly ask</span></div>
+      </div>
+
+      <div className="unified-examples">
+        {examples.map((example) => <button type="button" key={example} onClick={() => onPrompt(example)} disabled={busy}>{example}</button>)}
+      </div>
+    </section>
   );
 }
 
-function MissionBoard({ profile, mission, accounts, metrics, busy, expandedId, rejectingId, rejectReason, onOpenBrief, onNewMission, onRun, onExpand, onReview, onRejecting, onRejectReason, onFindContacts }: {
-  profile: BusinessProfile | null; mission: Mission | null; accounts: Account[]; metrics: { total: number; approved: number; contacts: number; average: number }; busy: string | null;
-  expandedId: string | null; rejectingId: string | null; rejectReason: string; onOpenBrief: () => void; onNewMission: () => void; onRun: () => void; onExpand: (id: string | null) => void;
+function ConversationPrimer({ hasProfile, onExample }: { hasProfile: boolean; onExample: (value: string) => void }) {
+  return (
+    <section className="conversation-primer">
+      <div><span>How the conversation works</span><h2>{hasProfile ? "Your thesis is ready. Give Meridian a search." : "One message can become a complete customer mission."}</h2></div>
+      <ol>
+        <li><i>01</i><div><strong>Describe the outcome</strong><p>Say what you sell and who you believe should buy it. Meridian extracts the thesis without making you fill out a form.</p></div></li>
+        <li><i>02</i><div><strong>Answer one useful question</strong><p>If the request is ambiguous, Meridian asks for the single missing detail instead of guessing.</p></div></li>
+        <li><i>03</i><div><strong>Run when you are ready</strong><p>Ask it to begin or continue. Live Orthogonal calls stay bounded by the mission budget and every result becomes a reviewable dossier.</p></div></li>
+      </ol>
+      {hasProfile && <button type="button" onClick={() => onExample("Find 25 companies that match our customer thesis and show a credible reason to buy now.")}>Draft a new mission <span>→</span></button>}
+    </section>
+  );
+}
+
+function MissionBoard({ mission, accounts, metrics, busy, expandedId, rejectingId, rejectReason, onRun, onExpand, onReview, onRejecting, onRejectReason, onFindContacts }: {
+  mission: Mission; accounts: Account[]; metrics: { total: number; approved: number; contacts: number; average: number }; busy: string | null;
+  expandedId: string | null; rejectingId: string | null; rejectReason: string; onRun: () => void; onExpand: (id: string | null) => void;
   onReview: (id: string, status: "approved" | "rejected" | "new", reason?: string) => void; onRejecting: (id: string | null) => void; onRejectReason: (value: string) => void; onFindContacts: (id: string) => void;
 }) {
-  if (!profile) return <EmptyState eyebrow="Before the search" title="Give the agent a customer thesis." copy="Describe what you sell, who benefits, and what signals indicate a real buying opportunity. Meridian will use that as the standard for every prospect." action="Write the business brief" onAction={onOpenBrief} />;
-  if (!mission) return <EmptyState eyebrow="The desk is ready" title="Commission your first customer search." copy="A mission is a durable research job with a target, a spend ceiling, and a reviewable pipeline. Meridian works in small batches so you can correct its judgment as it learns." action="Open a mission" onAction={onNewMission} />;
-
   const canRun = mission.status !== "running" && mission.prospectCount < mission.targetCount && mission.spentCents < mission.maxSpendCents;
   return (
     <div className="mission-page">
@@ -444,8 +426,4 @@ function MissionBoard({ profile, mission, accounts, metrics, busy, expandedId, r
       </section>
     </div>
   );
-}
-
-function EmptyState({ eyebrow, title, copy, action, onAction }: { eyebrow: string; title: string; copy: string; action: string; onAction: () => void }) {
-  return <div className="prospecting-empty-state"><span>{eyebrow}</span><h1>{title}</h1><p>{copy}</p><button className="meridian-primary-button" type="button" onClick={onAction}>{action}<span>→</span></button><div className="empty-state-rule"><i>01</i><span>Define the customer</span><i>02</i><span>Research live signals</span><i>03</i><span>Review and teach</span></div></div>;
 }

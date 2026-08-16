@@ -93,12 +93,31 @@ export const contactResearchOutputSchema = z.object({
   contacts: z.array(contactOutputSchema).max(5),
 });
 
+export const intakeTurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string().trim().min(1).max(4_000),
+});
+
+export const intakeInput = z.object({
+  messages: z.array(intakeTurnSchema).min(1).max(12),
+  selectedMissionId: z.string().trim().min(1).max(100).optional().nullable(),
+});
+
+export const intakeOutputSchema = z.object({
+  action: z.enum(["clarify", "update_profile", "create_mission", "run_mission"]),
+  reply: z.string().min(1).max(1_500),
+  profile: businessProfileInput.nullable(),
+  mission: missionInput.nullable(),
+});
+
 export type BusinessProfileInput = z.infer<typeof businessProfileInput>;
 export type MissionInput = z.infer<typeof missionInput>;
 export type MissionUpdateInput = z.infer<typeof missionUpdateInput>;
 export type ReviewInput = z.infer<typeof reviewInput>;
 export type MissionResearchOutput = z.infer<typeof missionResearchOutputSchema>;
 export type ContactResearchOutput = z.infer<typeof contactResearchOutputSchema>;
+export type IntakeInput = z.infer<typeof intakeInput>;
+export type IntakeOutput = z.infer<typeof intakeOutputSchema>;
 
 export function normalizeDomain(value: string | null | undefined): string | null {
   if (!value) return null;

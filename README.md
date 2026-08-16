@@ -6,8 +6,8 @@ Meridian is a customer-finding agent and conversational research workspace power
 
 Authenticated users can open `/prospecting` to move from one-off research to a durable customer-finding workflow:
 
-1. **Business brief:** Save the offer, value proposition, target industries, geographies, company sizes, buyer roles, buying signals, exclusions, and example customers once per company.
-2. **Resumable missions:** Set a specific search commission, target account count, and hard mission spend ceiling. Meridian researches in bounded batches and persists every completed batch, so later runs continue from saved work instead of repeating it.
+1. **One AI input:** Describe what the business sells and who it wants to reach in ordinary language. The unified intake extracts or revises the living customer thesis, asks one focused follow-up when essential context is missing, creates missions, and understands explicit requests to continue the selected mission—without separate setup forms.
+2. **Resumable missions:** The intake translates the request into a specific search commission, target account count, and hard mission spend ceiling. Meridian researches in bounded batches and persists every completed batch, so later runs continue from saved work instead of repeating it.
 3. **Evidence-backed dossiers:** Each account stores fit and timing scores, qualification reasoning, a current `why now`, suggested outreach context, source links, and available company facts.
 4. **Contact waterfall:** For a saved account, Meridian searches for a plausible decision-maker, confirms a public profile, uses contact data only through paid tools, and saves no guessed email addresses.
 5. **Human feedback:** Approvals and reasoned rejections are stored as explicit evidence for subsequent mission runs. Existing scores remain unchanged, preserving the audit trail.
