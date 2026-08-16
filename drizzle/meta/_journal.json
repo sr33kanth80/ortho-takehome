@@ -15,6 +15,13 @@
       "when": 1784845660512,
       "tag": "0001_enterprise_dynamic_execution",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786841904590,
+      "tag": "0002_prospecting_agent",
+      "breakpoints": true
     }
   ]
 }

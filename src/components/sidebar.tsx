@@ -43,7 +43,7 @@ export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, o
           </h1>
         </button>
         <p className="mt-1.5 pl-[30px] text-[11px] leading-[1.43] text-[var(--ink-faint)]">
-          live data assistant
+          customer research agent
         </p>
       </div>
 
@@ -103,6 +103,7 @@ export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, o
       </nav>
 
       <div className="border-t border-[var(--border)] px-4 py-3">
+        {userEmail.includes("@") && <a href="/prospecting" className="mb-2 flex items-center justify-between rounded-[6px] border border-[var(--border)] bg-[rgba(255,255,255,.35)] px-3 py-2 text-[12px] text-[var(--color-forest-ink)] hover:bg-[var(--bg-hover)]"><span>Customer-finding desk</span><span aria-hidden>→</span></a>}
         {isManager && <a href="/management" className="mb-3 flex items-center justify-between rounded-[6px] border border-[var(--border)] px-3 py-2 text-[12px] text-[var(--color-forest-ink)] hover:bg-[var(--bg-hover)]"><span>Company management</span><span aria-hidden>→</span></a>}
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="truncate text-[11px] text-[var(--ink-faint)]" title={userEmail}>{userEmail}</p>

@@ -1,6 +1,19 @@
 # Meridian
 
-Meridian is a web-based AI research assistant that answers questions with live data through [Orthogonal](https://orthogonal.com). It combines conversational research, visible tool execution, per-call cost reporting, reusable research recipes, persistent history, and optional push-to-talk voice in one interface.
+Meridian is a customer-finding agent and conversational research workspace powered by live data through [Orthogonal](https://orthogonal.com). A business can teach Meridian what it sells, commission a durable prospecting mission, review ranked accounts and decision-makers, and improve future research by approving or rejecting the agent's work. The original chat, visible tool execution, per-call cost reporting, reusable recipes, persistent history, governance, and optional push-to-talk voice remain available.
+
+## Prospecting Desk
+
+Authenticated users can open `/prospecting` to move from one-off research to a durable customer-finding workflow:
+
+1. **Business brief:** Save the offer, value proposition, target industries, geographies, company sizes, buyer roles, buying signals, exclusions, and example customers once per company.
+2. **Resumable missions:** Set a specific search commission, target account count, and hard mission spend ceiling. Meridian researches in bounded batches and persists every completed batch, so later runs continue from saved work instead of repeating it.
+3. **Evidence-backed dossiers:** Each account stores fit and timing scores, qualification reasoning, a current `why now`, suggested outreach context, source links, and available company facts.
+4. **Contact waterfall:** For a saved account, Meridian searches for a plausible decision-maker, confirms a public profile, uses contact data only through paid tools, and saves no guessed email addresses.
+5. **Human feedback:** Approvals and reasoned rejections are stored as explicit evidence for subsequent mission runs. Existing scores remain unchanged, preserving the audit trail.
+6. **Delivery:** The mission board supports review states, mission progress and spend reporting, decision-maker records, and spreadsheet-safe CSV export.
+
+The runner is deliberately bounded to a request-sized batch rather than pretending a serverless request is an unlimited background worker. Mission state, run status, tool charges, deduplication keys, and failure details are durable in Postgres; clicking **Find next batch** safely resumes the commission.
 
 **Last updated:** July 23, 2026
 

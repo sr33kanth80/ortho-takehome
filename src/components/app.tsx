@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Chat, useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { nanoid } from "nanoid";
@@ -278,9 +279,16 @@ function ChatPane({
               </span>
             </div>
             <p className="mx-auto mb-8 max-w-[560px] text-center text-[15px] leading-[1.5] text-[var(--ink-dim)]">
-              Meridian answers with live data: company profiles, people &amp; contacts, web and news
-              results, drawn from Orthogonal&apos;s API catalog, with every cent accounted for.
+              Research any question here—or give Meridian a customer thesis and let it build an
+              evidence-backed pipeline of accounts, decision-makers, and contact routes.
             </p>
+
+            {canUseVoice && (
+              <Link href="/prospecting" className="prospecting-launch-link">
+                <span><small>New working mode</small>Find customers for my business</span>
+                <span aria-hidden>→</span>
+              </Link>
+            )}
 
             <Composer
               large

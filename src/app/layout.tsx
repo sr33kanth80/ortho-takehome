@@ -20,9 +20,9 @@ const dmSerif = DM_Serif_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Meridian: live data research assistant",
+  title: "Meridian: customer-finding agent",
   description:
-    "AI chat assistant grounded in real world data via Orthogonal's API catalog: companies, contacts, web results, and more.",
+    "A live-data agent that learns your customer thesis, finds qualified businesses, identifies decision-makers, and explains why to contact them now.",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
