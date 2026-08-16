@@ -10,6 +10,15 @@ import { useRef, useState } from "react";
  */
 const CATEGORIES: { label: string; items: string[] }[] = [
   {
+    label: "Find B2B leads",
+    items: [
+      "We sell battery thermal simulation to manufacturers. Find Midwest companies expanding engineering teams and the VP-level buyers to contact.",
+      "Build a 25-account pipeline of regional banks that may need cybersecurity audits, using compliance or security hiring as buying signals.",
+      "Find Texas warehouse operators expanding their footprint and identify the operations leaders who could buy commercial solar.",
+      "Show my saved lead pipeline and continue the latest mission.",
+    ],
+  },
+  {
     label: "Companies",
     items: [
       "Profile the company behind stripe.com",

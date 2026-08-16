@@ -18,6 +18,10 @@ const TOOL_LABEL: Record<string, string> = {
   discover_apis: "catalog discovery",
   get_api_details: "endpoint schema",
   run_api: "catalog call",
+  get_lead_pipeline: "saved lead pipeline",
+  source_b2b_leads: "B2B lead sourcing",
+  continue_lead_mission: "next lead batch",
+  find_lead_contacts: "lead contacts",
 };
 
 interface ToolOutput {
@@ -33,7 +37,7 @@ function inputSummary(input: unknown): string {
   if (!input || typeof input !== "object") return "";
   const o = input as Record<string, unknown>;
   const pick =
-    o.domain ?? o.q ?? o.prompt ?? o.profile ?? o.full_name ?? o.email ??
+    o.domain ?? o.q ?? o.prompt ?? (typeof o.profile === "object" && o.profile ? (o.profile as Record<string, unknown>).offer : o.profile) ?? o.missionId ?? o.accountId ?? o.full_name ?? o.email ??
     (o.api && o.path ? `${o.api} ${o.path}` : undefined) ?? o.path;
   return typeof pick === "string" ? pick : JSON.stringify(pick ?? "");
 }

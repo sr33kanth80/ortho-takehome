@@ -11,6 +11,7 @@ import { createTools } from "@/lib/tools";
 import { SpendTracker } from "@/lib/tools/spend";
 import { saveMessages, titleFrom } from "@/lib/db/store";
 import { getCurrentUser, hasUsedGuestRun } from "@/lib/auth";
+import { createProspectingChatTools } from "@/lib/prospecting/chat-tools";
 
 export const maxDuration = 120; // agent turns with several tool calls need headroom
 
@@ -65,7 +66,10 @@ export async function POST(req: Request) {
   // One budget per turn: however the model chains tools, it cannot spend more
   // than MAX_SPEND_CENTS_PER_TURN of Orthogonal credit in this request.
   const spend = new SpendTracker();
-  const tools = createTools(spend, user ? { userId: user.id, companyId: user.companyId, conversationId } : undefined);
+  const researchTools = createTools(spend, user ? { userId: user.id, companyId: user.companyId, conversationId } : undefined);
+  const tools = user
+    ? { ...researchTools, ...createProspectingChatTools(user, spend) }
+    : researchTools;
 
   const result = streamText({
     model: getModel(),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { businessProfileInput, calculateOverallScore, intakeInput, missionInput, normalizeDomain } from "./validation";
+import { businessProfileInput, calculateOverallScore, leadSourcingInput, missionInput, normalizeDomain } from "./validation";
 
 test("normalizeDomain turns URLs and hosts into stable dedupe keys", () => {
   assert.equal(normalizeDomain("https://www.Example.com/about"), "example.com");
@@ -36,8 +36,24 @@ test("mission limits reject unbounded research jobs", () => {
   assert.equal(result.success, false);
 });
 
-test("unified intake keeps the conversation bounded", () => {
-  assert.equal(intakeInput.safeParse({ messages: [{ role: "user", text: "Find battery manufacturers" }] }).success, true);
-  assert.equal(intakeInput.safeParse({ messages: [] }).success, false);
-  assert.equal(intakeInput.safeParse({ messages: Array.from({ length: 13 }, () => ({ role: "user", text: "next" })) }).success, false);
+test("chat lead sourcing requires a complete thesis and bounded mission", () => {
+  const result = leadSourcingInput.safeParse({
+    profile: {
+      businessName: "Northstar",
+      website: null,
+      offer: "Battery thermal simulation",
+      valueProposition: "Reduce prototype cycles",
+      targetIndustries: ["Battery manufacturing"],
+      targetLocations: ["Midwest United States"],
+      companySizes: [],
+      buyerRoles: ["VP Engineering"],
+      buyingSignals: ["Engineering hiring"],
+      exclusions: [],
+      exampleCustomers: [],
+      notes: null,
+    },
+    mission: { name: "Midwest battery manufacturers", brief: "Find expanding manufacturers", targetCount: 25, maxSpendCents: 300 },
+  });
+  assert.equal(result.success, true);
+  assert.equal(leadSourcingInput.safeParse({ profile: result.success ? result.data.profile : {}, mission: { name: "Too broad", brief: "Find all", targetCount: 101, maxSpendCents: 300 } }).success, false);
 });

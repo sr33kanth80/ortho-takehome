@@ -1,21 +1,21 @@
 # Meridian
 
-Meridian is a customer-finding agent and conversational research workspace powered by live data through [Orthogonal](https://orthogonal.com). A business can teach Meridian what it sells, commission a durable prospecting mission, review ranked accounts and decision-makers, and improve future research by approving or rejecting the agent's work. The original chat, visible tool execution, per-call cost reporting, reusable recipes, persistent history, governance, and optional push-to-talk voice remain available.
+Meridian is a unified customer-finding agent and conversational research workspace powered by live data through [Orthogonal](https://orthogonal.com). The same research chat answers general questions, learns what a business sells, sources evidence-backed B2B accounts and decision-makers, and continues durable lead missions. Visible tool execution, per-call cost reporting, reusable recipes, persistent history, governance, and optional push-to-talk voice all remain part of that single agent.
 
-## Prospecting Desk
+## B2B lead sourcing in the research chat
 
-Authenticated users can open `/prospecting` to move from one-off research to a durable customer-finding workflow:
+Authenticated users source B2B leads from Meridian's normal composer—the same place they research companies, people, news, or any other question:
 
-1. **One AI input:** Describe what the business sells and who it wants to reach in ordinary language. The unified intake extracts or revises the living customer thesis, asks one focused follow-up when essential context is missing, creates missions, and understands explicit requests to continue the selected mission—without separate setup forms.
-2. **Resumable missions:** The intake translates the request into a specific search commission, target account count, and hard mission spend ceiling. Meridian researches in bounded batches and persists every completed batch, so later runs continue from saved work instead of repeating it.
+1. **One agent input:** Describe what the business sells, which companies should buy, and the buyer role. Meridian asks at most one focused follow-up when essential context is missing, then creates and runs the lead mission inside that conversation.
+2. **Resumable missions:** The chat translates the request into a specific search commission, target account count, and hard mission spend ceiling. Meridian researches in bounded batches and persists every completed batch, so saying **continue** resumes saved work instead of repeating it.
 3. **Evidence-backed dossiers:** Each account stores fit and timing scores, qualification reasoning, a current `why now`, suggested outreach context, source links, and available company facts.
-4. **Contact waterfall:** For a saved account, Meridian searches for a plausible decision-maker, confirms a public profile, uses contact data only through paid tools, and saves no guessed email addresses.
+4. **Contact waterfall:** The first sourcing turn attempts a credible decision-maker route. The user can ask for contacts for any saved lead; Meridian confirms a public profile, uses contact data only through paid tools, and saves no guessed email addresses.
 5. **Human feedback:** Approvals and reasoned rejections are stored as explicit evidence for subsequent mission runs. Existing scores remain unchanged, preserving the audit trail.
-6. **Delivery:** The mission board supports review states, mission progress and spend reporting, decision-maker records, and spreadsheet-safe CSV export.
+6. **Review and delivery:** `/prospecting` is the saved-pipeline review surface—not a second AI. It supports review states, mission progress and spend reporting, decision-maker records, and spreadsheet-safe CSV export.
 
-The runner is deliberately bounded to a request-sized batch rather than pretending a serverless request is an unlimited background worker. Mission state, run status, tool charges, deduplication keys, and failure details are durable in Postgres; clicking **Find next batch** safely resumes the commission.
+The runner is deliberately bounded to a request-sized batch rather than pretending a serverless request is an unlimited background worker. Mission state, run status, tool charges, deduplication keys, and failure details are durable in Postgres; asking Meridian to continue—or clicking **Find next batch** in the review surface—safely resumes the commission.
 
-**Last updated:** July 23, 2026
+**Last updated:** August 15, 2026
 
 The application exposes this exact file at `/readme`. The global **README** button in the top-right corner of every page opens that route, so the repository document and evaluator-facing document have one source of truth.
 
@@ -56,6 +56,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 
 - The agent can chain multiple tools in one turn.
 - Common company, contact, web, and news tasks use curated, validated tools.
+- Signed-in users can create, continue, inspect, and enrich durable B2B lead missions from the normal research conversation.
 - Unusual requests can search the Orthogonal catalog, inspect an endpoint schema, and execute the selected endpoint.
 - Company managers can govern endpoint access, employee execution access, and per-call/daily/monthly limits; each control affects the live agent path.
 - Managers can monitor monthly usage and investigate allowed, blocked, failed, and indeterminate executions from `/management`.

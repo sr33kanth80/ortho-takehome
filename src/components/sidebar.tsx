@@ -16,7 +16,7 @@ interface Props {
 
 export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, onDelete, onHome, onSignOut, isManager = false }: Props) {
   return (
-    <aside className="meridian-sidebar flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
+    <aside className="meridian-sidebar flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-sidebar)] max-md:hidden">
       {/* brand mark — Getclockwise diamond/compass glyph + wordmark; returns home */}
       <div className="px-4 pb-4 pt-5">
         <button
@@ -103,7 +103,7 @@ export function Sidebar({ conversations, activeId, userEmail, onSelect, onNew, o
       </nav>
 
       <div className="border-t border-[var(--border)] px-4 py-3">
-        {userEmail.includes("@") && <a href="/prospecting" className="mb-2 flex items-center justify-between rounded-[6px] border border-[var(--border)] bg-[rgba(255,255,255,.35)] px-3 py-2 text-[12px] text-[var(--color-forest-ink)] hover:bg-[var(--bg-hover)]"><span>Customer-finding desk</span><span aria-hidden>→</span></a>}
+        {userEmail.includes("@") && <a href="/prospecting" className="mb-2 flex items-center justify-between rounded-[6px] border border-[var(--border)] bg-[rgba(255,255,255,.35)] px-3 py-2 text-[12px] text-[var(--color-forest-ink)] hover:bg-[var(--bg-hover)]"><span>Saved lead pipeline</span><span aria-hidden>→</span></a>}
         {isManager && <a href="/management" className="mb-3 flex items-center justify-between rounded-[6px] border border-[var(--border)] px-3 py-2 text-[12px] text-[var(--color-forest-ink)] hover:bg-[var(--bg-hover)]"><span>Company management</span><span aria-hidden>→</span></a>}
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="truncate text-[11px] text-[var(--ink-faint)]" title={userEmail}>{userEmail}</p>

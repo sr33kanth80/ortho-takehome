@@ -11,20 +11,15 @@ import {
   claimMissionRun,
   completeContactResearch,
   completeMissionRun,
-  createMission,
   failContactResearch,
   failMissionRun,
   getBusinessProfile,
   getMissionAccounts,
   getRecentFeedback,
-  listMissions,
-  saveBusinessProfile,
 } from "./store";
 import {
   contactResearchOutputSchema,
-  intakeOutputSchema,
   missionResearchOutputSchema,
-  type IntakeInput,
 } from "./validation";
 
 const PROSPECTING_SYSTEM = `You are Meridian's customer-finding agent. You own a narrow outcome: find businesses that plausibly need the user's offer and identify credible decision-makers using live evidence.
@@ -57,58 +52,22 @@ function toolTrace(result: {
   })));
 }
 
-export async function runProspectingIntake(user: AuthUser, input: IntakeInput) {
-  const [currentProfile, missions] = await Promise.all([getBusinessProfile(user), listMissions(user)]);
-  const selectedMission = input.selectedMissionId
-    ? missions.find((mission) => mission.id === input.selectedMissionId) ?? null
-    : missions[0] ?? null;
-  const result = await generateText({
-    model: getModel(),
-    output: Output.object({ schema: intakeOutputSchema }),
-    system: `You are the intake conversation for Meridian, a customer-finding agent. Turn natural language into one safe product action.
-
-Available actions:
-- clarify: ask exactly one concise question when the user's offer, desired customer, or requested outcome is too ambiguous to act on. Do not invent missing business facts.
-- update_profile: revise the living business profile without opening a new search. Use only when the user explicitly asks to change what Meridian knows about the business.
-- create_mission: create a customer search when the user has supplied enough business context and a clear target. Return a complete profile and mission.
-- run_mission: only when the user explicitly asks to run, continue, resume, or find the next batch for the selected mission. Never choose this merely because a mission exists.
-
-For a new profile, preserve the user's literal offer and value proposition. Arrays should contain short criteria, not prose. Use defaults of 25 target accounts and a 300-cent mission budget unless the user specifies otherwise. If an existing profile is supplied, preserve unchanged fields exactly unless the user explicitly revises them. Never claim live research has happened during intake.`,
-    prompt: `CURRENT BUSINESS PROFILE
-${compact(currentProfile)}
-
-CURRENT MISSIONS
-${compact(missions.map((mission) => ({ id: mission.id, name: mission.name, brief: mission.brief, status: mission.status, prospectCount: mission.prospectCount, targetCount: mission.targetCount })))}
-
-SELECTED MISSION
-${compact(selectedMission)}
-
-CONVERSATION
-${compact(input.messages)}`,
-  });
-
-  const decision = result.output;
-  if (decision.action === "clarify") return { ...decision, missionId: selectedMission?.id ?? null, run: null };
-  if (decision.action === "update_profile") {
-    if (!decision.profile) return { action: "clarify" as const, reply: "Tell me what should change about your customer thesis.", profile: null, mission: null, missionId: selectedMission?.id ?? null, run: null };
-    await saveBusinessProfile(user, decision.profile);
-    return { ...decision, missionId: selectedMission?.id ?? null, run: null };
-  }
-  if (decision.action === "create_mission") {
-    if (!decision.profile || !decision.mission) return { action: "clarify" as const, reply: "Tell me what you sell and which businesses you want me to find.", profile: null, mission: null, missionId: selectedMission?.id ?? null, run: null };
-    await saveBusinessProfile(user, decision.profile);
-    const mission = await createMission(user, decision.mission);
-    return { ...decision, mission: decision.mission, missionId: mission.id, run: null };
-  }
-  const missionId = selectedMission?.id;
-  if (!missionId) return { action: "clarify" as const, reply: "First, describe what you sell and who you want Meridian to find.", profile: null, mission: null, missionId: null, run: null };
-  const run = await runProspectMission(user, missionId);
-  return { ...decision, missionId, run };
+function createRunSpend(remainingBudget: number, parent?: SpendTracker) {
+  return new SpendTracker(Math.min(
+    env.guards.maxSpendCentsPerTurn,
+    remainingBudget,
+    parent?.remainingCents ?? Number.MAX_SAFE_INTEGER,
+  ));
 }
 
-export async function runProspectMission(user: AuthUser, missionId: string) {
+function syncRunSpend(parent: SpendTracker | undefined, child: SpendTracker) {
+  if (!parent) return;
+  for (const charge of child.charges) parent.record(charge.api, charge.path, charge.cents);
+}
+
+export async function runProspectMission(user: AuthUser, missionId: string, parentSpend?: SpendTracker) {
   const claim = await claimMissionRun(user, missionId);
-  const spend = new SpendTracker(Math.min(env.guards.maxSpendCentsPerTurn, claim.remainingBudget));
+  const spend = createRunSpend(claim.remainingBudget, parentSpend);
   try {
     const [profile, feedback, existingAccounts] = await Promise.all([
       getBusinessProfile(user),
@@ -154,12 +113,14 @@ Use web_search to discover and validate candidates, enrich_company when a domain
     const message = error instanceof Error ? error.message : "Unknown research failure";
     await failMissionRun(user, missionId, claim.runId, message.slice(0, 2_000), spend.totalCents, spend.charges);
     throw error;
+  } finally {
+    syncRunSpend(parentSpend, spend);
   }
 }
 
-export async function runContactWaterfall(user: AuthUser, accountId: string) {
+export async function runContactWaterfall(user: AuthUser, accountId: string, parentSpend?: SpendTracker) {
   const claim = await claimContactResearch(user, accountId);
-  const spend = new SpendTracker(Math.min(env.guards.maxSpendCentsPerTurn, claim.remainingBudget));
+  const spend = createRunSpend(claim.remainingBudget, parentSpend);
   try {
     const profile = await getBusinessProfile(user);
     const result = await generateText({
@@ -189,5 +150,7 @@ ${compact(claim.account)}`,
     const message = error instanceof Error ? error.message : "Unknown contact research failure";
     await failContactResearch(user, accountId, claim.runId, message.slice(0, 2_000), spend.totalCents, spend.charges);
     throw error;
+  } finally {
+    syncRunSpend(parentSpend, spend);
   }
 }
