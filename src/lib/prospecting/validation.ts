@@ -30,14 +30,6 @@ export const missionInput = z.object({
   maxSpendCents: z.number().int().min(1).max(25_000).default(300),
 });
 
-export const missionUpdateInput = z.object({
-  name: shortText.optional(),
-  brief: longText.optional(),
-  targetCount: z.number().int().min(1).max(100).optional(),
-  maxSpendCents: z.number().int().min(1).max(25_000).optional(),
-  status: z.enum(["draft", "paused", "completed"]).optional(),
-});
-
 export const reviewInput = z.object({
   status: z.enum(["approved", "rejected", "archived", "new"]),
   reason: z.string().trim().max(1_000).optional().nullable(),
@@ -106,9 +98,12 @@ export const leadContactInput = z.object({
   accountId: z.string().trim().min(1).max(100),
 });
 
+export const leadReviewInput = reviewInput.extend({
+  accountId: z.string().trim().min(1).max(100),
+});
+
 export type BusinessProfileInput = z.infer<typeof businessProfileInput>;
 export type MissionInput = z.infer<typeof missionInput>;
-export type MissionUpdateInput = z.infer<typeof missionUpdateInput>;
 export type ReviewInput = z.infer<typeof reviewInput>;
 export type MissionResearchOutput = z.infer<typeof missionResearchOutputSchema>;
 export type ContactResearchOutput = z.infer<typeof contactResearchOutputSchema>;

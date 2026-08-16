@@ -7,11 +7,13 @@ import { runContactWaterfall, runProspectMission } from "./agent";
 import {
   createMission,
   getBusinessProfile,
+  getMission,
   getMissionAccounts,
   listMissions,
+  reviewProspect,
   saveBusinessProfile,
 } from "./store";
-import { leadContactInput, leadMissionInput, leadSourcingInput } from "./validation";
+import { leadContactInput, leadMissionInput, leadReviewInput, leadSourcingInput } from "./validation";
 
 const MAX_TOOL_DATA_CHARS = 12_000;
 
@@ -79,9 +81,9 @@ export function createProspectingChatTools(user: AuthUser, spend: SpendTracker) 
               targetCount: mission.targetCount,
               contactCount: mission.contactCount,
               remainingBudgetCents: mission.maxSpendCents - mission.spentCents,
+              exportUrl: `/api/prospecting/missions/${mission.id}/export`,
             })),
             selectedLeads: leadRows(accounts),
-            pipelineUrl: "/prospecting",
           });
           return { ok: true as const, costCents: 0, ...payload };
         } catch (error) {
@@ -123,7 +125,7 @@ export function createProspectingChatTools(user: AuthUser, spend: SpendTracker) 
             summary: run.summary,
             leads: leadRows(accounts),
             contactNote,
-            pipelineUrl: "/prospecting",
+            exportUrl: `/api/prospecting/missions/${savedMission.id}/export`,
           });
           return { ok: true as const, costCents, totalSpentCents: spend.totalCents, ...payload };
         } catch (error) {
@@ -150,7 +152,7 @@ export function createProspectingChatTools(user: AuthUser, spend: SpendTracker) 
             inserted: run.inserted,
             summary: run.summary,
             leads: leadRows(accounts),
-            pipelineUrl: "/prospecting",
+            exportUrl: `/api/prospecting/missions/${missionId}/export`,
           });
           return { ok: true as const, costCents, totalSpentCents: spend.totalCents, ...payload };
         } catch (error) {
@@ -171,8 +173,36 @@ export function createProspectingChatTools(user: AuthUser, spend: SpendTracker) 
         try {
           const result = await runContactWaterfall(user, accountId, spend);
           const costCents = spend.totalCents - startingCost;
-          const payload = data({ accountId, summary: result.summary, contacts: result.contacts, pipelineUrl: "/prospecting" });
+          const payload = data({ accountId, summary: result.summary, contacts: result.contacts });
           return { ok: true as const, costCents, totalSpentCents: spend.totalCents, ...payload };
+        } catch (error) {
+          return errorResult(error);
+        }
+      },
+    }),
+
+    review_b2b_lead: tool({
+      description:
+        "Approve, reject, archive, or reset one saved B2B lead from the conversation. For a rejection, include the user's reason so future sourcing batches can learn from it. Call get_lead_pipeline first if the account ID is not already present in the conversation.",
+      inputSchema: leadReviewInput,
+      execute: async ({ accountId, status, reason }) => {
+        try {
+          const account = await reviewProspect(user, accountId, { status, reason });
+          return { ok: true as const, costCents: 0, ...data({ accountId: account.id, company: account.name, status: account.status, rejectionReason: account.rejectionReason }) };
+        } catch (error) {
+          return errorResult(error);
+        }
+      },
+    }),
+
+    export_lead_mission: tool({
+      description:
+        "Prepare the authenticated CSV download link for a saved B2B lead mission. Call get_lead_pipeline first if the mission ID is not already present in the conversation.",
+      inputSchema: leadMissionInput,
+      execute: async ({ missionId }) => {
+        try {
+          const mission = await getMission(user, missionId);
+          return { ok: true as const, costCents: 0, ...data({ missionId, missionName: mission.name, downloadUrl: `/api/prospecting/missions/${missionId}/export` }) };
         } catch (error) {
           return errorResult(error);
         }

@@ -22,6 +22,8 @@ const TOOL_LABEL: Record<string, string> = {
   source_b2b_leads: "B2B lead sourcing",
   continue_lead_mission: "next lead batch",
   find_lead_contacts: "lead contacts",
+  review_b2b_lead: "lead review",
+  export_lead_mission: "lead export",
 };
 
 interface ToolOutput {

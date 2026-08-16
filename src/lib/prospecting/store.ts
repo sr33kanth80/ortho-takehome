@@ -12,13 +12,12 @@ import {
   type ContactResearchOutput,
   type MissionInput,
   type MissionResearchOutput,
-  type MissionUpdateInput,
   type ReviewInput,
 } from "./validation";
 
 function requireDb() {
   const db = getDb();
-  if (!db) throw new ProspectingError("DATABASE_URL is required for the Prospecting Desk.", 503);
+  if (!db) throw new ProspectingError("DATABASE_URL is required for durable lead sourcing.", 503);
   return db;
 }
 
@@ -78,22 +77,6 @@ export async function createMission(user: AuthUser, input: MissionInput) {
   return mission;
 }
 
-export async function updateMission(user: AuthUser, id: string, input: MissionUpdateInput) {
-  const [mission] = await requireDb().update(schema.prospectMissions)
-    .set({ ...input, updatedAt: new Date() })
-    .where(and(eq(schema.prospectMissions.id, id), eq(schema.prospectMissions.companyId, user.companyId)))
-    .returning();
-  if (!mission) throw new ProspectingError("Mission not found.", 404);
-  return mission;
-}
-
-export async function deleteMission(user: AuthUser, id: string) {
-  const deleted = await requireDb().delete(schema.prospectMissions)
-    .where(and(eq(schema.prospectMissions.id, id), eq(schema.prospectMissions.companyId, user.companyId)))
-    .returning({ id: schema.prospectMissions.id });
-  if (!deleted.length) throw new ProspectingError("Mission not found.", 404);
-}
-
 export async function getMission(user: AuthUser, id: string) {
   const [mission] = await requireDb().select().from(schema.prospectMissions)
     .where(and(eq(schema.prospectMissions.id, id), eq(schema.prospectMissions.companyId, user.companyId)))
@@ -113,16 +96,6 @@ export async function getMissionAccounts(user: AuthUser, missionId: string) {
     .where(and(eq(schema.prospectContacts.companyId, user.companyId), inArray(schema.prospectContacts.accountId, accounts.map((account) => account.id))))
     .orderBy(desc(schema.prospectContacts.preferred), desc(schema.prospectContacts.confidence));
   return accounts.map((account) => ({ ...account, contacts: contacts.filter((contact) => contact.accountId === account.id) }));
-}
-
-export async function getProspectingOverview(user: AuthUser, selectedMissionId?: string) {
-  const [profile, missions] = await Promise.all([getBusinessProfile(user), listMissions(user)]);
-  const selectedId = selectedMissionId && missions.some((mission) => mission.id === selectedMissionId)
-    ? selectedMissionId
-    : missions[0]?.id;
-  const accounts = selectedId ? await getMissionAccounts(user, selectedId) : [];
-  const selectedMission = selectedId ? missions.find((mission) => mission.id === selectedId) ?? null : null;
-  return { profile, missions, selectedMission, accounts };
 }
 
 export async function getRecentFeedback(user: AuthUser, limit = 30) {

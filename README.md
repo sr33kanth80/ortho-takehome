@@ -11,9 +11,9 @@ Authenticated users source B2B leads from Meridian's normal composer—the same 
 3. **Evidence-backed dossiers:** Each account stores fit and timing scores, qualification reasoning, a current `why now`, suggested outreach context, source links, and available company facts.
 4. **Contact waterfall:** The first sourcing turn attempts a credible decision-maker route. The user can ask for contacts for any saved lead; Meridian confirms a public profile, uses contact data only through paid tools, and saves no guessed email addresses.
 5. **Human feedback:** Approvals and reasoned rejections are stored as explicit evidence for subsequent mission runs. Existing scores remain unchanged, preserving the audit trail.
-6. **Review and delivery:** `/prospecting` is the saved-pipeline review surface—not a second AI. It supports review states, mission progress and spend reporting, decision-maker records, and spreadsheet-safe CSV export.
+6. **Review and delivery in chat:** Ask Meridian to show the saved pipeline, approve or reject a lead, find a missing contact, or export a mission. The agent returns an authenticated CSV download link without sending the user to another workspace.
 
-The runner is deliberately bounded to a request-sized batch rather than pretending a serverless request is an unlimited background worker. Mission state, run status, tool charges, deduplication keys, and failure details are durable in Postgres; asking Meridian to continue—or clicking **Find next batch** in the review surface—safely resumes the commission.
+The runner is deliberately bounded to a request-sized batch rather than pretending a serverless request is an unlimited background worker. Mission state, run status, tool charges, deduplication keys, and failure details are durable in Postgres; asking Meridian to continue safely resumes the commission.
 
 **Last updated:** August 15, 2026
 
@@ -25,7 +25,7 @@ Bera, I treated Meridian as the smallest honest version of the product we intend
 
 I implemented that through a hybrid agent. The common paths are curated for reliability: company research, contacts, web, and news. The long tail goes through Orthogonal's catalog discovery flow: search for an API, inspect its schema, choose the useful and affordable option, and run it. I kept the tool trace, spend guardrails, conversation history, recipes, voice path, and evaluator-facing README visible so the app feels like a real product rather than a chat demo. Someone can try one completed research run before being asked to create an account; when they do, Meridian carries that first thread into the new account.
 
-Dynamic execution is also an enterprise-governed capability. Managers control exactly three things: endpoint access policy, employee execution access, and spend/usage limits. Those decisions are enforced inside the server-side execution path and every attempted dynamic run is written to an investigation ledger. The manager workspace at `/management` exposes usage, individual execution evidence, and an append-only change history without changing the employee chat workflow.
+Dynamic execution is also an enterprise-governed capability. Managers control exactly three things: endpoint access policy, employee execution access, and spend/usage limits. Those decisions are enforced inside the server-side execution path and every attempted dynamic run is written to an investigation ledger. Authenticated management APIs remain available as a headless control plane; there is no second application workspace.
 
 Visually, I implemented Orthogonal's design but with a medium-y, rolex-esque design: editorial typography, parchment, forest ink, restrained emerald accents, and a sense of considered craft. The goal was to make Meridian feel calm, premium, and trustworthy while still making the live-data machinery legible underneath.
 
@@ -59,7 +59,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 - Signed-in users can create, continue, inspect, and enrich durable B2B lead missions from the normal research conversation.
 - Unusual requests can search the Orthogonal catalog, inspect an endpoint schema, and execute the selected endpoint.
 - Company managers can govern endpoint access, employee execution access, and per-call/daily/monthly limits; each control affects the live agent path.
-- Managers can monitor monthly usage and investigate allowed, blocked, failed, and indeterminate executions from `/management`.
+- Authenticated management APIs can configure limits and inspect allowed, blocked, failed, and indeterminate executions without adding another product page.
 - Tool inputs, outputs, failures, and attributed costs are visible in the conversation trace.
 - A persistent animated `Cooking` status remains visible for the entire agent turn, including pauses between multiple tool calls and final answer synthesis.
 - Conversation history can be listed, reopened, resumed, and deleted.
@@ -108,7 +108,7 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 |                                      +--> TTL cache               |
 |                                                                  |
 |  Accounts + conversations + execution ledger --> Postgres        |
-|  Manager workspace: policy, access, limits, audit --> Postgres    |
+|  Headless governance APIs: policy, limits, audit --> Postgres    |
 |  Completed guest-run marker ------------> HttpOnly browser cookie |
 |  /readme -------------------------------> README.md               |
 +------------------------------------------------------------------+
@@ -138,7 +138,8 @@ The product therefore uses a hybrid agent: curated tools handle common research 
 | `src/lib/tools/spend.ts` | Server-side per-turn and per-session spend accounting |
 | `src/lib/governance/execution.ts` | Company policy enforcement, durable budget reservation, execution state machine, and evidence capture |
 | `src/lib/governance/management.ts` | Manager authorization, configuration mutations, usage queries, and append-only change auditing |
-| `src/app/management/page.tsx` | Manager-only company control room for access, policy, spend, monitoring, and investigation |
+| `src/app/api/management/*` | Authenticated headless controls for policy, access, spend, monitoring, and investigation |
+| `src/lib/prospecting/chat-tools.ts` | Durable lead sourcing, continuation, review, contact enrichment, and CSV delivery from the main conversation |
 | `src/lib/orthogonal/client.ts` | Authenticated Orthogonal search, details, list, and run requests; cache and error normalization |
 | `src/lib/db/store.ts` | Postgres-backed, owner-scoped conversation history |
 | `src/lib/auth.ts` | Password sessions, account lookup, and completed-guest-run cookie helpers |
@@ -462,7 +463,7 @@ If this application were deployed to production today, the primary concerns woul
 5. **Voice storage is single-instance.** A speech provider can fail to retrieve an in-memory clip if a request is routed to another instance.
 6. **The transient audio endpoint is public by possession of its ID.** IDs are unguessable and short-lived, but signed URLs and object storage would provide stronger production controls.
 7. **Dynamic validation is bounded by catalog metadata.** Meridian re-fetches details, rejects unknown/dynamic pricing, enforces required parameters, and caps payload size, but semantic correctness still depends on Orthogonal's catalog descriptions.
-8. **Dynamic execution has a structured ledger and manager dashboard.** Broader model, curated-tool, and voice telemetry still needs centralized metrics and alerting.
+8. **Dynamic execution has a structured ledger and headless management APIs.** Broader model, curated-tool, and voice telemetry still needs centralized metrics and alerting.
 9. **No automated agent eval suite exists.** Tool-selection regressions are currently caught through manual scenarios and smoke scripts.
 10. **Long conversations are truncated rather than summarized.** The latest 40 messages are retained for an agent request.
 11. **The default Orthogonal model does not truly token-stream.** Tool events remain incremental, but text arrives one agent step at a time.
@@ -490,7 +491,7 @@ If this application were deployed to production today, the primary concerns woul
 4. **Cost-aware planning.** Give the model a priced tool plan before execution and require confirmation above configurable thresholds.
 5. **Conversation summarization.** Compress earlier context instead of silently dropping it after 40 messages.
 6. **Durable realtime voice.** Move audio to signed object storage, sessions to Redis, and complete the realtime WebRTC interface.
-7. **Broader administrative controls.** Extend the shipped dynamic execution control room with recipe management, SSO group sync, retention policy, and spend alerts.
+7. **Broader administrative controls.** Extend the headless governance control plane with recipe management, SSO group sync, retention policy, and spend alerts only if operational demand justifies another interface.
 8. **Data retention controls.** Add export, deletion, configurable retention periods, and audit logging.
 
 ## Changelog and Timeline
@@ -533,8 +534,15 @@ If this application were deployed to production today, the primary concerns woul
 - Added exactly three live governance controls: endpoint access policy, employee execution access, and per-call/daily/monthly spend limits.
 - Added policy-aware discovery and schema inspection plus a final server-side authorization, validation, and fixed-price check before `run_api`.
 - Added concurrency-safe Postgres budget reservations, tool-call idempotency, explicit indeterminate outcomes, sanitized evidence previews, and an investigation ledger.
-- Added the `/management` control room with usage metrics, configuration workflows, execution drill-down, and append-only change history.
+- Added the initial management control room with usage metrics, configuration workflows, execution drill-down, and append-only change history; its page UI was retired in the August single-surface pass.
 - Added focused governance tests, migration verification, production-build validation, and desktop/mobile browser checks.
+
+### August 15, 2026: One visible Meridian
+
+- Made the normal research chat the only agent interface for general research and durable B2B lead sourcing.
+- Added chat-native pipeline retrieval, continuation, contact enrichment, approval/rejection feedback, and authenticated CSV delivery.
+- Removed the separate prospecting and management pages plus their client bundles, navigation, and page-specific API surface.
+- Preserved the prospecting engine, durable mission data, spend enforcement, execution ledger, and authenticated headless governance APIs.
 
 ## Running the Application
 

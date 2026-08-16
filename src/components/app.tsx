@@ -193,7 +193,6 @@ function MeridianWorkspace({ initialConversationId, initialRecipe, user, guestRu
         conversations={conversations}
         activeId={conversationId}
         userEmail={user?.email ?? "One complimentary research run"}
-        isManager={user?.role === "manager"}
         onSelect={openConversation}
         onNew={guestLocked ? onRequireAuth : newConversation}
         onDelete={deleteConversation}

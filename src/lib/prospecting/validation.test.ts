@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { businessProfileInput, calculateOverallScore, leadSourcingInput, missionInput, normalizeDomain } from "./validation";
+import { businessProfileInput, calculateOverallScore, leadReviewInput, leadSourcingInput, missionInput, normalizeDomain } from "./validation";
 
 test("normalizeDomain turns URLs and hosts into stable dedupe keys", () => {
   assert.equal(normalizeDomain("https://www.Example.com/about"), "example.com");
@@ -56,4 +56,9 @@ test("chat lead sourcing requires a complete thesis and bounded mission", () => 
   });
   assert.equal(result.success, true);
   assert.equal(leadSourcingInput.safeParse({ profile: result.success ? result.data.profile : {}, mission: { name: "Too broad", brief: "Find all", targetCount: 101, maxSpendCents: 300 } }).success, false);
+});
+
+test("chat lead review keeps rejection feedback bounded", () => {
+  assert.equal(leadReviewInput.safeParse({ accountId: "account-1", status: "approved" }).success, true);
+  assert.equal(leadReviewInput.safeParse({ accountId: "account-1", status: "rejected", reason: "x".repeat(1_001) }).success, false);
 });
